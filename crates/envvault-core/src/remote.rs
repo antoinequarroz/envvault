@@ -129,7 +129,7 @@ impl SftpRemote {
                     let mut handle = sftp.open(&remote_file).map_err(|_| Error::Remote)?;
                     let mut bytes = Vec::new();
                     handle.read_to_end(&mut bytes).map_err(|_| Error::Remote)?;
-                    crate::storage::create_new_atomic(&pending.join(name), &bytes, 0o600)?;
+                    write_resumable_ciphertext(&pending.join(name), &bytes)?;
                     transferred += 1;
                 }
                 if !pending.join("manifest.age").exists() {
@@ -151,6 +151,13 @@ fn read_remote(sftp: &Sftp, path: &Path) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
     handle.read_to_end(&mut bytes).map_err(|_| Error::Remote)?;
     Ok(bytes)
+}
+
+fn write_resumable_ciphertext(path: &Path, bytes: &[u8]) -> Result<()> {
+    if fs::read(path).ok().as_deref() == Some(bytes) {
+        return Ok(());
+    }
+    crate::storage::atomic_write(path, bytes, 0o600)
 }
 
 pub fn verify_host_key(host_key: &[u8], expected: &str) -> Result<()> {
@@ -187,6 +194,8 @@ fn is_ciphertext_name(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use tempfile::tempdir;
+
     use super::*;
 
     #[test]
@@ -209,5 +218,17 @@ mod tests {
         assert!(is_ciphertext_name("0123456789abcdef0123456789abcdef.age"));
         assert!(!is_ciphertext_name(".env.age"));
         assert!(!is_ciphertext_name("../../secret.age"));
+        assert!(!is_ciphertext_name("manifest.age.part"));
+    }
+
+    #[test]
+    fn interrupted_pull_can_resume_from_atomic_objects() {
+        let dir = tempdir().expect("tempdir");
+        let partial = dir.path().join("manifest.age");
+        write_resumable_ciphertext(&partial, b"complete-ciphertext").expect("first transfer");
+        write_resumable_ciphertext(&partial, b"complete-ciphertext").expect("idempotent retry");
+        fs::write(&partial, b"interrupted").expect("simulate interrupted state");
+        write_resumable_ciphertext(&partial, b"complete-ciphertext").expect("resume");
+        assert_eq!(fs::read(partial).expect("read"), b"complete-ciphertext");
     }
 }
