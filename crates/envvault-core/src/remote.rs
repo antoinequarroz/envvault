@@ -65,7 +65,9 @@ impl SftpRemote {
                 let bytes = fs::read(file.path())?;
                 let destination = remote_dir.join(&name);
                 if let Ok(stat) = sftp.stat(&destination) {
-                    if stat.size == Some(bytes.len() as u64) {
+                    if stat.size == Some(bytes.len() as u64)
+                        && read_remote(&sftp, &destination)? == bytes
+                    {
                         continue;
                     }
                     return Err(Error::Remote);
@@ -98,6 +100,20 @@ impl SftpRemote {
             }
             let final_dir = local_backups.join(id);
             if final_dir.exists() {
+                for (remote_file, _) in sftp.readdir(&remote_dir).map_err(|_| Error::Remote)? {
+                    let Some(name) = remote_file.file_name().and_then(|name| name.to_str()) else {
+                        continue;
+                    };
+                    if !is_ciphertext_name(name) {
+                        continue;
+                    }
+                    let local = final_dir.join(name);
+                    if fs::read(local).ok().as_deref()
+                        != Some(read_remote(&sftp, &remote_file)?.as_slice())
+                    {
+                        return Err(Error::Remote);
+                    }
+                }
                 continue;
             }
             let pending = local_backups.join(format!(".pending-sync-{id}"));
@@ -128,6 +144,13 @@ impl SftpRemote {
         }
         Ok(transferred)
     }
+}
+
+fn read_remote(sftp: &Sftp, path: &Path) -> Result<Vec<u8>> {
+    let mut handle = sftp.open(path).map_err(|_| Error::Remote)?;
+    let mut bytes = Vec::new();
+    handle.read_to_end(&mut bytes).map_err(|_| Error::Remote)?;
+    Ok(bytes)
 }
 
 pub fn verify_host_key(host_key: &[u8], expected: &str) -> Result<()> {

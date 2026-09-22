@@ -79,7 +79,7 @@ pub fn scan(root: &Path, options: &ScanOptions) -> Result<Vec<ScannedFile>> {
             continue;
         };
         let detected = name == ".env" || name.starts_with(".env.");
-        if !detected && !includes.contains(&relative) {
+        if !detected {
             continue;
         }
         let metadata = fs::symlink_metadata(entry.path())?;
@@ -139,5 +139,16 @@ mod tests {
     fn rejects_traversal() {
         assert!(safe_relative(Path::new("../secret")).is_err());
         assert!(safe_relative(Path::new("/secret")).is_err());
+    }
+
+    #[test]
+    fn explicit_include_cannot_collect_non_env_files() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(dir.path().join("credentials.json"), "fictitious").expect("write");
+        let options = ScanOptions {
+            include: vec![PathBuf::from("credentials.json")],
+            exclude: vec![],
+        };
+        assert!(scan(dir.path(), &options).expect("scan").is_empty());
     }
 }
