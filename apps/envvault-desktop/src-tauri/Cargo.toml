@@ -1,0 +1,19 @@
+[package]
+name = "envvault-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[dependencies]
+directories.workspace = true
+envvault-core = { path = "../../../crates/envvault-core" }
+serde.workspace = true
+serde_json.workspace = true
+tauri = { version = "2", features = [] }
+uuid.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
