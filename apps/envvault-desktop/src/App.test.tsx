@@ -58,6 +58,28 @@ describe("EnvVault interface flows", () => {
     expect(screen.getByRole("checkbox", { name: /^\.env 42 octets/ })).toBeChecked();
   });
 
+  it("chooses and scans a project folder with the native picker", async () => {
+    const user = userEvent.setup();
+    const calls: Array<{ command: string; args?: Record<string, unknown> }> = [];
+    const command: CommandBridge = async <T,>(commandName: string, args?: Record<string, unknown>) => {
+      calls.push({ command: commandName, args });
+      if (commandName === "dashboard") return dashboard as T;
+      if (commandName === "scan_project") {
+        return [{ relative_path: ".env", size: 42, selected_by_default: true }] as T;
+      }
+      return undefined as T;
+    };
+
+    render(<App command={command} directoryPicker={async () => "/work/chosen-site"} initialTab="add" />);
+    await screen.findByRole("heading", { name: "Ajouter un projet", level: 2 });
+    await user.click(screen.getByRole("button", { name: "Choisir un dossier" }));
+
+    expect(await screen.findByDisplayValue("/work/chosen-site")).toBeInTheDocument();
+    expect(await screen.findByText(".env")).toBeInTheDocument();
+    expect(screen.getByLabelText("Nom du projet")).toHaveValue("chosen-site");
+    expect(calls).toContainEqual({ command: "scan_project", args: { path: "/work/chosen-site" } });
+  });
+
   it("requires explicit collision confirmation before restore", async () => {
     const user = userEvent.setup();
     const command = bridge({

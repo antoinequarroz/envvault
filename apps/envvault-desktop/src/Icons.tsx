@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 export type IconName =
   | "home"
   | "projects"
+  | "folderOpen"
   | "plus"
   | "history"
   | "settings"
@@ -18,6 +19,7 @@ export function Icon({ name }: { name: IconName }) {
   const paths: Record<IconName, ReactNode> = {
     home: <><path d="M3 10.8 12 3l9 7.8"/><path d="M5.5 9.5V21h13V9.5"/><path d="M9.5 21v-6h5v6"/></>,
     projects: <><path d="M3 7.5h7l2 2H21v10.5H3z"/><path d="M3 7.5V5h7l2 2h6"/></>,
+    folderOpen: <><path d="M3 7.5h7l2 2h8.5"/><path d="M3 7.5V5h7l2 2h6"/><path d="m3 19.5 2.7-8h16l-2.7 8z"/></>,
     plus: <><path d="M12 5v14"/><path d="M5 12h14"/></>,
     history: <><path d="M3.5 12a8.5 8.5 0 1 0 2.2-5.7L3.5 8.5"/><path d="M3.5 4.5v4h4"/><path d="M12 7.5V12l3 2"/></>,
     settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></>,

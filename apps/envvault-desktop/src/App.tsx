@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import { Icon } from "./Icons";
 import {
   createTranslator,
@@ -46,7 +47,13 @@ export type RestorePlan = {
 };
 
 export type CommandBridge = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
+export type DirectoryPicker = (title: string) => Promise<string | null>;
 export type Tab = "home" | "projects" | "add" | "history" | "restore" | "settings";
+
+const openDirectory: DirectoryPicker = async (title) => {
+  const selection = await open({ directory: true, multiple: false, title });
+  return typeof selection === "string" ? selection : null;
+};
 
 const empty: Dashboard = {
   initialized: false,
@@ -104,9 +111,11 @@ function EmptyState({
 
 export default function App({
   command = invoke as CommandBridge,
+  directoryPicker = openDirectory,
   initialTab = "home",
 }: {
   command?: CommandBridge;
+  directoryPicker?: DirectoryPicker;
   initialTab?: Tab;
 }) {
   const [locale, setLocale] = useState<Locale>(() => loadLocale(window.localStorage));
@@ -176,8 +185,9 @@ export default function App({
     }
   }
 
-  async function scanPath() {
-    if (!path.trim()) {
+  async function scanPath(targetPath = path) {
+    const projectPath = targetPath.trim();
+    if (!projectPath) {
       setFieldError(t("fieldProjectPath"));
       return;
     }
@@ -185,12 +195,31 @@ export default function App({
     setFieldError("");
     setNotice(null);
     try {
-      const result = await command<Scanned[]>("scan_project", { path });
+      const result = await command<Scanned[]>("scan_project", { path: projectPath });
       setFound(result);
       setSelected(result.filter((file) => file.selected_by_default).map((file) => file.relative_path));
-      if (!name) setName(path.split(/[\\/]/).filter(Boolean).at(-1) ?? t("projectName"));
+      if (!name) setName(projectPath.split(/[\\/]/).filter(Boolean).at(-1) ?? t("projectName"));
     } catch {
       setNotice({ kind: "error", text: t("errorScan") });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function chooseProjectFolder() {
+    setBusy(true);
+    setFieldError("");
+    setNotice(null);
+    try {
+      const selection = await directoryPicker(t("chooseProjectFolderTitle"));
+      if (!selection) return;
+      setPath(selection);
+      setName("");
+      setFound([]);
+      setSelected([]);
+      await scanPath(selection);
+    } catch {
+      setNotice({ kind: "error", text: t("errorChooseProjectFolder") });
     } finally {
       setBusy(false);
     }
@@ -398,7 +427,11 @@ export default function App({
             <div className="section-heading"><div><h2>{t("addProjectTitle")}</h2><p>{t("addProjectHelp")}</p></div></div>
             <div className="form-row action-field">
               <label htmlFor="project-path">{t("projectFolder")}</label>
-              <div><input id="project-path" value={path} onChange={(event) => { setPath(event.target.value); setFieldError(""); }} placeholder={t("projectFolderExample")} spellCheck={false} /><button type="button" className="secondary" disabled={busy} onClick={() => void scanPath()}>{t("scanFolder")}</button></div>
+              <div>
+                <input id="project-path" value={path} onChange={(event) => { setPath(event.target.value); setName(""); setFound([]); setSelected([]); setFieldError(""); }} placeholder={t("projectFolderExample")} spellCheck={false} />
+                <button type="button" className="secondary" disabled={busy} onClick={() => void chooseProjectFolder()}><Icon name="folderOpen" />{t("chooseProjectFolder")}</button>
+                <button type="button" className="secondary" disabled={busy} onClick={() => void scanPath()}>{t("scanFolder")}</button>
+              </div>
               {found.length === 0 && fieldErrorNode}
             </div>
             {found.length > 0 && (

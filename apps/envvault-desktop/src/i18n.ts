@@ -56,6 +56,8 @@ export const fr = {
     "Seuls les fichiers .env détectés et confirmés seront ajoutés au projet.",
   projectFolder: "Dossier du projet",
   projectFolderExample: "/chemin/vers/le/projet",
+  chooseProjectFolder: "Choisir un dossier",
+  chooseProjectFolderTitle: "Choisir le dossier du projet",
   scanFolder: "Analyser le dossier",
   projectName: "Nom du projet",
   projectNameExample: "Site vitrine",
@@ -145,6 +147,8 @@ export const fr = {
     "Impossible de créer le coffre. Vérifiez l’accès au trousseau et l’espace disponible, puis réessayez.",
   errorScan:
     "Impossible d’analyser ce dossier. Vérifiez que le chemin existe et que vous avez l’autorisation de le lire.",
+  errorChooseProjectFolder:
+    "Impossible d’ouvrir le sélecteur de dossiers. Réessayez ou saisissez le chemin manuellement.",
   errorProject:
     "Impossible d’ajouter ce projet. Vérifiez le dossier et la sélection, puis réessayez.",
   errorBackup:
@@ -240,6 +244,8 @@ export const en: Messages = {
     "Only detected .env files that you confirm will be added to the project.",
   projectFolder: "Project folder",
   projectFolderExample: "/path/to/project",
+  chooseProjectFolder: "Choose folder",
+  chooseProjectFolderTitle: "Choose the project folder",
   scanFolder: "Scan folder",
   projectName: "Project name",
   projectNameExample: "Marketing site",
@@ -327,6 +333,8 @@ export const en: Messages = {
     "Unable to create the vault. Check keyring access and available storage, then try again.",
   errorScan:
     "Unable to scan this folder. Check that the path exists and that you can read it.",
+  errorChooseProjectFolder:
+    "Unable to open the folder picker. Try again or enter the path manually.",
   errorProject:
     "Unable to add this project. Check the folder and selection, then try again.",
   errorBackup:
