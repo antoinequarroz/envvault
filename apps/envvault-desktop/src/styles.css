@@ -150,6 +150,7 @@ label, .form-row > label, .settings-form > label { color: #d5d5df; font-size: 12
 .secret-row > div { min-width: 0; display: grid; gap: 4px; }
 .secret-row small { color: var(--muted); font-size: 10px; }
 .secret-row code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+.server-row .row-actions { grid-column: 2 / -1; display: flex; justify-content: flex-start; }
 .import-card > div:first-child p, .inline-empty p { margin: 5px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .file-picker-field { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
 .import-card .file-picker-field { grid-template-columns: 1fr; }
@@ -161,6 +162,8 @@ label, .form-row > label, .settings-form > label { color: #d5d5df; font-size: 12
 .danger-button:hover:not(:disabled) { background: rgb(253 164 175 / 14%); border-color: rgb(253 164 175 / 36%); }
 .delete-confirmation { position: fixed; z-index: 20; right: 24px; bottom: 24px; width: min(460px, calc(100vw - 48px)); display: grid; gap: 15px; padding: 18px; border: 1px solid rgb(253 164 175 / 24%); border-radius: 16px; background: #17131c; box-shadow: 0 24px 70px rgb(0 0 0 / 55%), inset 0 1px 0 rgb(255 255 255 / 5%); }
 .delete-confirmation p { margin: 5px 0 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+.operation-confirmation { border-color: rgb(139 92 246 / 24%); background: #13121d; }
+.operation-confirmation label { display: block; }
 .selection-card, .confirmation-card { display: grid; gap: 13px; padding: 18px; border: 1px solid var(--line); border-radius: 16px; background: rgb(255 255 255 / 2%); }
 .selection-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-top: 7px; }
 .selection-heading p { margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }

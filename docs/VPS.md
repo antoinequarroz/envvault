@@ -4,7 +4,7 @@ Treat the VPS as untrusted ciphertext storage. EnvVault does not need shell comm
 
 ## Recommended server boundary
 
-Create a dedicated unprivileged account and directory for EnvVault. Give it only the permissions needed to create directories, upload temporary files, and atomically rename within that directory. Use a dedicated SSH key with no passphrase only when the local machine's filesystem protections are appropriate; otherwise use an SSH agent-compatible operational process outside EnvVault.
+Create a dedicated unprivileged account and directory for EnvVault. Give it only the permissions needed to create directories, upload temporary files, and atomically rename within that directory. Use a dedicated SSH key. The desktop app accepts both passphrase-free and source-encrypted OpenSSH keys; for the latter, the passphrase is requested for each connection and is never stored.
 
 Restrict the account with the server's SFTP-only controls and deny password authentication. Exact commands vary by operating system and hosting provider, so review the platform's OpenSSH guidance rather than pasting an unreviewed production configuration.
 
@@ -30,7 +30,7 @@ envvault sync push
 envvault sync pull
 ```
 
-The desktop Settings view exposes the same fields and explicit Push/Pull operations. EnvVault does not perform background synchronization or automatic deletion.
+The desktop Servers view provides a native workflow: import the private key in Secrets, add a server with its remote directory and independently verified host fingerprint, then use Test, Pull, or Push on that profile. The private key is decrypted only in memory for the operation. The legacy Settings configuration exposes the path-based CLI-style fields. EnvVault does not perform background synchronization or automatic deletion.
 
 ## First-use checklist
 

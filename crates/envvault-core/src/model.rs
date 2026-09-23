@@ -120,9 +120,22 @@ pub struct ServerProfile {
     pub host: String,
     pub port: u16,
     pub username: String,
+    #[serde(default)]
+    pub remote_path: String,
     pub host_key_sha256: String,
     pub ssh_key_id: String,
     pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct NewServerProfile {
+    pub name: String,
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub remote_path: String,
+    pub host_key_sha256: String,
+    pub ssh_key_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]

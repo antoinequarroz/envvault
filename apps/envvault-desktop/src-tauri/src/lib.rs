@@ -4,8 +4,9 @@ use std::sync::Arc;
 
 use directories::ProjectDirs;
 use envvault_core::{
-    BackupSummary, KeyringSecretStore, LocalState, Project, RemoteConfig, RestorePlan, ScanOptions,
-    ScannedFile, ServerProfile, SftpRemote, SshKeySummary, Vault, VerifyReport, scan,
+    BackupSummary, KeyringSecretStore, LocalState, NewServerProfile, Project, RemoteConfig,
+    RestorePlan, ScanOptions, ScannedFile, ServerProfile, SftpRemote, SshKeySummary, Vault,
+    VerifyReport, scan,
 };
 use secrecy::SecretString;
 use serde::Serialize;
@@ -288,13 +289,46 @@ fn add_server_profile(
     host: String,
     port: u16,
     username: String,
+    remote_path: String,
     host_key_sha256: String,
     ssh_key_id: String,
 ) -> Result<ServerProfile, String> {
     let state = load_state()?;
     vault(&state)
-        .add_server_profile(&name, &host, port, &username, &host_key_sha256, &ssh_key_id)
+        .add_server_profile(NewServerProfile {
+            name,
+            host,
+            port,
+            username,
+            remote_path,
+            host_key_sha256,
+            ssh_key_id,
+        })
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn server_operation(
+    id: String,
+    operation: String,
+    passphrase: Option<String>,
+) -> Result<usize, String> {
+    let state = load_state()?;
+    let passphrase = passphrase
+        .filter(|value| !value.is_empty())
+        .map(SecretString::from);
+    let remote = vault(&state)
+        .remote_for_server(&id, passphrase)
+        .map_err(|e| e.to_string())?;
+    match operation.as_str() {
+        "test" => remote
+            .test_connection()
+            .map(|()| 0)
+            .map_err(|e| e.to_string()),
+        "push" => remote.push(&state.vault_path).map_err(|e| e.to_string()),
+        "pull" => remote.pull(&state.vault_path).map_err(|e| e.to_string()),
+        _ => Err("server operation must be test, push, or pull".into()),
+    }
 }
 
 #[tauri::command]
@@ -331,6 +365,7 @@ pub fn run() {
             sync_remote,
             import_ssh_key,
             add_server_profile,
+            server_operation,
             delete_ssh_key,
             delete_server_profile
         ])

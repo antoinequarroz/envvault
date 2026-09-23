@@ -125,6 +125,7 @@ describe("EnvVault interface flows", () => {
     await user.type(await screen.findByLabelText("Nom du serveur"), "VPS Suisse");
     await user.type(screen.getByLabelText("Hôte"), "vps.example.test");
     await user.type(screen.getByLabelText("Nom d’utilisateur"), "deploy");
+    await user.type(screen.getByLabelText("Dossier distant"), "/srv/envvault");
     await user.selectOptions(screen.getByLabelText("Clé SSH associée"), "key-1");
     await user.type(screen.getByLabelText("Empreinte de la clé d’hôte approuvée"), "SHA256:verified-host");
     await user.click(screen.getByRole("button", { name: "Enregistrer le serveur" }));
@@ -135,10 +136,51 @@ describe("EnvVault interface flows", () => {
         host: "vps.example.test",
         port: 22,
         username: "deploy",
+        remotePath: "/srv/envvault",
         hostKeySha256: "SHA256:verified-host",
         sshKeyId: "key-1",
       },
     }));
+  });
+
+  it("uses a stored key for a server operation and clears its source passphrase", async () => {
+    const user = userEvent.setup();
+    const storedKey = {
+      id: "key-1",
+      name: "Production",
+      algorithm: "ssh-ed25519",
+      fingerprint: "SHA256:test",
+      encrypted_at_source: true,
+      created_at: "2026-09-23T09:00:00Z",
+    };
+    const server = {
+      id: "server-1",
+      name: "VPS Suisse",
+      host: "vps.example.test",
+      port: 22,
+      username: "deploy",
+      remote_path: "/srv/envvault",
+      host_key_sha256: "SHA256:verified-host",
+      ssh_key_id: "key-1",
+      created_at: "2026-09-23T09:05:00Z",
+    };
+    const calls: Array<{ command: string; args?: Record<string, unknown> }> = [];
+    const command: CommandBridge = async <T,>(commandName: string, args?: Record<string, unknown>) => {
+      calls.push({ command: commandName, args });
+      if (commandName === "dashboard") return { ...dashboard, ssh_keys: [storedKey], servers: [server] } as T;
+      return undefined as T;
+    };
+
+    render(<App command={command} initialTab="servers" />);
+    await user.click(await screen.findByRole("button", { name: "Tester" }));
+    const passphrase = screen.getByLabelText("Phrase secrète de la clé SSH");
+    await user.type(passphrase, "temporary-test-passphrase");
+    await user.click(screen.getByRole("button", { name: "Continuer l’opération" }));
+    await waitFor(() => expect(calls).toContainEqual({
+      command: "server_operation",
+      args: { id: "server-1", operation: "test", passphrase: "temporary-test-passphrase" },
+    }));
+    expect(screen.queryByDisplayValue("temporary-test-passphrase")).not.toBeInTheDocument();
   });
 
   it("requires explicit collision confirmation before restore", async () => {

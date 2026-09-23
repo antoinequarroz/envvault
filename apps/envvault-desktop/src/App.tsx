@@ -47,6 +47,7 @@ export type ServerProfile = {
   host: string;
   port: number;
   username: string;
+  remote_path: string;
   host_key_sha256: string;
   ssh_key_id: string;
   created_at: string;
@@ -186,9 +187,12 @@ export default function App({
   const [serverHost, setServerHost] = useState("");
   const [serverPort, setServerPort] = useState("22");
   const [serverUsername, setServerUsername] = useState("");
+  const [serverRemotePath, setServerRemotePath] = useState("");
   const [serverHostKey, setServerHostKey] = useState("");
   const [serverSshKey, setServerSshKey] = useState("");
   const [pendingDelete, setPendingDelete] = useState<{ kind: "key" | "server"; id: string } | null>(null);
+  const [serverOperation, setServerOperation] = useState<{ id: string; operation: "test" | "push" | "pull" } | null>(null);
+  const [serverPassphrase, setServerPassphrase] = useState("");
 
   useEffect(() => {
     document.documentElement.lang = locale;
@@ -198,6 +202,10 @@ export default function App({
   useEffect(() => {
     if (pendingDelete) document.getElementById("delete-confirm-button")?.focus();
   }, [pendingDelete]);
+
+  useEffect(() => {
+    if (serverOperation) document.getElementById("server-key-passphrase")?.focus();
+  }, [serverOperation]);
 
   const refresh = useCallback(async () => {
     try {
@@ -306,7 +314,7 @@ export default function App({
   }
 
   function addServer() {
-    if (!serverName.trim() || !serverHost.trim() || !serverUsername.trim() || !serverSshKey || !serverHostKey.startsWith("SHA256:")) {
+    if (!serverName.trim() || !serverHost.trim() || !serverUsername.trim() || !serverRemotePath.startsWith("/") || !serverSshKey || !serverHostKey.startsWith("SHA256:")) {
       setFieldError(t("fieldServer"));
       return;
     }
@@ -318,6 +326,7 @@ export default function App({
           host: serverHost,
           port: Number(serverPort),
           username: serverUsername,
+          remotePath: serverRemotePath,
           hostKeySha256: serverHostKey,
           sshKeyId: serverSshKey,
         });
@@ -325,11 +334,39 @@ export default function App({
         setServerHost("");
         setServerPort("22");
         setServerUsername("");
+        setServerRemotePath("");
         setServerHostKey("");
         setServerSshKey("");
       },
       "successServer",
       "errorServer",
+    );
+  }
+
+  function requestServerOperation(server: ServerProfile, operation: "test" | "push" | "pull") {
+    setFieldError("");
+    const key = data.ssh_keys.find((item) => item.id === server.ssh_key_id);
+    if (key?.encrypted_at_source) {
+      setServerPassphrase("");
+      setServerOperation({ id: server.id, operation });
+      return;
+    }
+    void executeServerOperation(server.id, operation, "");
+  }
+
+  async function executeServerOperation(id: string, operation: "test" | "push" | "pull", passphrase: string) {
+    if (serverOperation && !passphrase) {
+      setFieldError(t("fieldSshPassphrase"));
+      return;
+    }
+    setServerOperation(null);
+    setServerPassphrase("");
+    const successKey: MessageKey = operation === "test" ? "successServerTest" : operation === "push" ? "successServerPush" : "successServerPull";
+    const errorKey: MessageKey = operation === "test" ? "errorServerTest" : operation === "push" ? "errorServerPush" : "errorServerPull";
+    await action(
+      () => command("server_operation", { id, operation, passphrase: passphrase || null }),
+      successKey,
+      errorKey,
     );
   }
 
@@ -619,7 +656,7 @@ export default function App({
               <div className="secret-list">
                 {data.servers.length === 0 ? <div className="inline-empty"><span className="empty-icon"><Icon name="server" /></span><div><h3>{t("serversEmptyTitle")}</h3><p>{t("serversEmptyBody")}</p></div></div> : data.servers.map((server) => {
                   const linkedKey = data.ssh_keys.find((key) => key.id === server.ssh_key_id);
-                  return <article className="secret-row" key={server.id}><span className="setting-icon"><Icon name="server" /></span><div><strong>{server.name}</strong><small>{server.username}@{server.host}:{server.port}</small><code>{linkedKey?.name ?? t("missingKey")}</code></div><button type="button" className="danger-button compact" disabled={busy} onClick={() => setPendingDelete({ kind: "server", id: server.id })}>{t("delete")}</button></article>;
+                  return <article className="secret-row server-row" key={server.id}><span className="setting-icon"><Icon name="server" /></span><div><strong>{server.name}</strong><small>{server.username}@{server.host}:{server.port} · {server.remote_path}</small><code>{linkedKey?.name ?? t("missingKey")}</code></div><div className="row-actions"><button type="button" className="secondary compact" disabled={busy} onClick={() => requestServerOperation(server, "test")}>{t("testConnection")}</button><button type="button" className="secondary compact" disabled={busy} onClick={() => requestServerOperation(server, "pull")}>{t("serverPull")}</button><button type="button" className="secondary compact" disabled={busy} onClick={() => requestServerOperation(server, "push")}>{t("serverPush")}</button><button type="button" className="danger-button compact" disabled={busy} onClick={() => setPendingDelete({ kind: "server", id: server.id })}>{t("delete")}</button></div></article>;
                 })}
               </div>
               <div className="selection-card import-card">
@@ -627,6 +664,7 @@ export default function App({
                 <label htmlFor="server-name">{t("serverName")}</label><input id="server-name" value={serverName} onChange={(event) => { setServerName(event.target.value); setFieldError(""); }} placeholder={t("serverNameExample")} />
                 <div className="settings-grid remote-grid"><div><label htmlFor="server-host">{t("remoteHost")}</label><input id="server-host" value={serverHost} onChange={(event) => { setServerHost(event.target.value); setFieldError(""); }} placeholder={t("remoteHostExample")} spellCheck={false} /></div><div><label htmlFor="server-port">{t("remotePort")}</label><input id="server-port" type="number" min="1" max="65535" value={serverPort} onChange={(event) => setServerPort(event.target.value)} /></div></div>
                 <label htmlFor="server-username">{t("remoteUsername")}</label><input id="server-username" value={serverUsername} onChange={(event) => { setServerUsername(event.target.value); setFieldError(""); }} placeholder={t("remoteUsernameExample")} spellCheck={false} />
+                <label htmlFor="server-remote-path">{t("remoteFolder")}</label><input id="server-remote-path" value={serverRemotePath} onChange={(event) => { setServerRemotePath(event.target.value); setFieldError(""); }} placeholder={t("remoteFolderExample")} spellCheck={false} />
                 <label htmlFor="server-key">{t("serverSshKey")}</label><select id="server-key" value={serverSshKey} onChange={(event) => { setServerSshKey(event.target.value); setFieldError(""); }}><option value="">{t("chooseStoredKey")}</option>{data.ssh_keys.map((key) => <option value={key.id} key={key.id}>{key.name} · {key.fingerprint}</option>)}</select>
                 <label htmlFor="server-fingerprint">{t("hostFingerprint")}</label><input id="server-fingerprint" value={serverHostKey} onChange={(event) => { setServerHostKey(event.target.value); setFieldError(""); }} placeholder={t("hostFingerprintExample")} spellCheck={false} />
                 {data.ssh_keys.length === 0 && <p className="field-hint">{t("serverNeedsKey")}</p>}{fieldErrorNode}
@@ -695,6 +733,15 @@ export default function App({
           <div className="delete-confirmation" role="alertdialog" aria-labelledby="delete-confirmation-title" aria-describedby="delete-confirmation-description">
             <div><strong id="delete-confirmation-title">{t(pendingDelete.kind === "key" ? "deleteKeyTitle" : "deleteServerTitle")}</strong><p id="delete-confirmation-description">{t(pendingDelete.kind === "key" ? "deleteKeyHelp" : "deleteServerHelp")}</p></div>
             <div className="button-row"><button type="button" className="secondary" onClick={() => setPendingDelete(null)}>{t("cancel")}</button><button id="delete-confirm-button" type="button" className="danger-button" disabled={busy} onClick={confirmDelete}>{t("deletePermanently")}</button></div>
+          </div>
+        )}
+
+        {serverOperation && (
+          <div className="delete-confirmation operation-confirmation" role="dialog" aria-labelledby="server-operation-title" aria-describedby="server-operation-description">
+            <div><strong id="server-operation-title">{t("unlockSshKeyTitle")}</strong><p id="server-operation-description">{t("unlockSshKeyHelp")}</p></div>
+            <label htmlFor="server-key-passphrase">{t("sourceKeyPassphrase")}</label><input id="server-key-passphrase" type="password" value={serverPassphrase} onChange={(event) => { setServerPassphrase(event.target.value); setFieldError(""); }} autoComplete="current-password" />
+            {fieldErrorNode}
+            <div className="button-row"><button type="button" className="secondary" onClick={() => { setServerOperation(null); setServerPassphrase(""); setFieldError(""); }}>{t("cancel")}</button><button type="button" disabled={busy} onClick={() => void executeServerOperation(serverOperation.id, serverOperation.operation, serverPassphrase)}>{t("continueOperation")}</button></div>
           </div>
         )}
       </main>

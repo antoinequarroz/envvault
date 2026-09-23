@@ -110,7 +110,7 @@ envvault sync pull
 
 EnvVault uses the SSH library directly, so secrets are not placed in subprocess arguments. Unknown or changed host keys are rejected. Uploads use `.part` files followed by an atomic rename; pulls use local pending directories. Existing immutable backup IDs are never silently replaced, and remote deletion is never automatic.
 
-Current sync is explicit push/pull, not a background bidirectional merge. A remote server should restrict the account to the configured directory. The SFTP configuration still uses a dedicated local key path. Separately, the desktop Secrets view can import an encrypted copy into the vault and associate it with VPS profiles; direct `ssh-agent` and SFTP use of stored keys are not enabled yet.
+Current sync is explicit push/pull, not a background bidirectional merge. A remote server should restrict the account to the configured directory. The CLI configuration uses a dedicated local key path. In the desktop app, the Secrets view imports an encrypted key into the vault; a VPS profile can then test its connection and push or pull by decrypting that key only in memory. Source-key passphrases are requested per operation and are not persisted.
 
 See [`docs/VPS.md`](docs/VPS.md) for a dedicated-account checklist and safe first-use procedure.
 
@@ -153,7 +153,7 @@ Tests cover age round trips, wrong keys, corruption, recovery, encrypted-manifes
 - File changes are represented by new immutable backup versions; content deduplication is intentionally omitted to avoid deterministic identifiers and extra complexity.
 - Windows applies restrictive creation semantics available to the platform, but the explicit `0600` assertion is Unix-only.
 - There is no key rotation workflow in version 1.
-- Stored SSH keys are catalogued and associated with VPS profiles, but are not yet exported, loaded into `ssh-agent`, or used directly by the SFTP client.
+- Stored SSH keys are not exported or loaded into `ssh-agent`; the desktop app only uses them in memory for its own SFTP operations.
 - Desktop prerelease bundles are not yet code-signed or notarized.
 
 ## License

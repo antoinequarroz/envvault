@@ -99,6 +99,13 @@ export const fr = {
   chooseStoredKey: "Choisir une clé stockée",
   serverNeedsKey: "Importez d’abord une clé SSH dans la section Secrets.",
   saveServer: "Enregistrer le serveur",
+  testConnection: "Tester",
+  serverPull: "Récupérer",
+  serverPush: "Envoyer",
+  unlockSshKeyTitle: "Déverrouiller la clé SSH",
+  unlockSshKeyHelp: "Cette clé était déjà protégée avant son import. Sa phrase est utilisée uniquement en mémoire pour cette opération.",
+  sourceKeyPassphrase: "Phrase secrète de la clé SSH",
+  continueOperation: "Continuer l’opération",
   missingKey: "Clé introuvable",
   delete: "Supprimer",
   cancel: "Annuler",
@@ -174,6 +181,9 @@ export const fr = {
   successSshKeyDelete: "Clé SSH supprimée du coffre.",
   successServer: "Serveur enregistré avec sa clé et son empreinte d’hôte.",
   successServerDelete: "Fiche serveur supprimée.",
+  successServerTest: "Connexion SSH et empreinte d’hôte vérifiées.",
+  successServerPush: "Objets chiffrés envoyés avec la clé stockée.",
+  successServerPull: "Objets chiffrés récupérés avec la clé stockée.",
   successVerify: "Vérification d’intégrité terminée.",
   successRestore:
     "Restauration terminée avec des permissions de fichier restrictives.",
@@ -202,6 +212,9 @@ export const fr = {
   errorServer:
     "Impossible d’enregistrer ce serveur. Vérifiez les champs, la clé choisie et l’empreinte SHA256.",
   errorServerDelete: "Impossible de supprimer cette fiche serveur.",
+  errorServerTest: "Connexion impossible. Vérifiez l’hôte, l’empreinte, l’utilisateur, la clé et sa phrase secrète.",
+  errorServerPush: "Envoi impossible avec cette fiche serveur. Vérifiez la connexion et le dossier distant.",
+  errorServerPull: "Récupération impossible avec cette fiche serveur. Vérifiez la connexion et le dossier distant.",
   errorProject:
     "Impossible d’ajouter ce projet. Vérifiez le dossier et la sélection, puis réessayez.",
   errorBackup:
@@ -227,7 +240,8 @@ export const fr = {
   fieldProjectSelection:
     "Choisissez un nom et au moins un fichier avant d’ajouter le projet.",
   fieldSshKey: "Choisissez un fichier de clé privée et donnez-lui un nom.",
-  fieldServer: "Renseignez le nom, l’hôte, le port, l’utilisateur, la clé et une empreinte SHA256 vérifiée.",
+  fieldServer: "Renseignez le nom, l’hôte, le port, l’utilisateur, le dossier distant, la clé et une empreinte SHA256 vérifiée.",
+  fieldSshPassphrase: "Saisissez la phrase secrète de cette clé SSH pour continuer.",
   fieldRestoreDestination:
     "Indiquez un dossier de destination avant de prévisualiser la restauration.",
   fieldRecovery:
@@ -342,6 +356,13 @@ export const en: Messages = {
   chooseStoredKey: "Choose a stored key",
   serverNeedsKey: "Import an SSH key in Secrets first.",
   saveServer: "Save server",
+  testConnection: "Test",
+  serverPull: "Pull",
+  serverPush: "Push",
+  unlockSshKeyTitle: "Unlock SSH key",
+  unlockSshKeyHelp: "This key was protected before import. Its passphrase is used in memory for this operation only.",
+  sourceKeyPassphrase: "SSH-key passphrase",
+  continueOperation: "Continue operation",
   missingKey: "Missing key",
   delete: "Delete",
   cancel: "Cancel",
@@ -416,6 +437,9 @@ export const en: Messages = {
   successSshKeyDelete: "SSH key deleted from the vault.",
   successServer: "Server saved with its key and host fingerprint.",
   successServerDelete: "Server profile deleted.",
+  successServerTest: "SSH connection and host fingerprint verified.",
+  successServerPush: "Encrypted objects pushed with the stored key.",
+  successServerPull: "Encrypted objects pulled with the stored key.",
   successVerify: "Integrity verification complete.",
   successRestore: "Restore completed with restrictive file permissions.",
   successRecoveryExport:
@@ -443,6 +467,9 @@ export const en: Messages = {
   errorServer:
     "Unable to save this server. Check the fields, selected key, and SHA256 fingerprint.",
   errorServerDelete: "Unable to delete this server profile.",
+  errorServerTest: "Unable to connect. Check the host, fingerprint, username, key, and its passphrase.",
+  errorServerPush: "Unable to push with this server profile. Check the connection and remote folder.",
+  errorServerPull: "Unable to pull with this server profile. Check the connection and remote folder.",
   errorProject:
     "Unable to add this project. Check the folder and selection, then try again.",
   errorBackup:
@@ -467,7 +494,8 @@ export const en: Messages = {
   fieldProjectSelection:
     "Choose a name and at least one file before adding the project.",
   fieldSshKey: "Choose a private-key file and give it a name.",
-  fieldServer: "Enter the name, host, port, username, key, and a verified SHA256 fingerprint.",
+  fieldServer: "Enter the name, host, port, username, remote folder, key, and a verified SHA256 fingerprint.",
+  fieldSshPassphrase: "Enter this SSH key’s passphrase to continue.",
   fieldRestoreDestination:
     "Enter a destination folder before previewing the restore.",
   fieldRecovery:

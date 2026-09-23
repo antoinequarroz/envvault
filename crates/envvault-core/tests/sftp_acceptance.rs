@@ -56,6 +56,7 @@ fn sftp_loopback_push_pull_resume_conflict_and_host_key() {
         .expect("valid test port");
     let username = required_env("ENVAULT_SFTP_USERNAME");
     let private_key = PathBuf::from(required_env("ENVAULT_SFTP_PRIVATE_KEY"));
+    let private_key_contents = fs::read_to_string(&private_key).expect("read loopback private key");
     let host_key = required_env("ENVAULT_SFTP_HOST_KEY");
     let remote_path = PathBuf::from(required_env("ENVAULT_SFTP_REMOTE_PATH"));
 
@@ -86,16 +87,21 @@ fn sftp_loopback_push_pull_resume_conflict_and_host_key() {
         private_key: private_key.clone(),
         host_key_sha256: host_key.clone(),
     };
-    let wrong_host = SftpRemote::new(RemoteConfig {
-        host_key_sha256: "SHA256:deliberately-wrong-loopback-key".to_owned(),
-        ..config.clone()
-    });
+    let wrong_host = SftpRemote::with_private_key(
+        RemoteConfig {
+            host_key_sha256: "SHA256:deliberately-wrong-loopback-key".to_owned(),
+            ..config.clone()
+        },
+        SecretString::from(private_key_contents.clone()),
+        None,
+    );
     assert!(matches!(
         wrong_host.push(&source_vault),
         Err(Error::HostKeyMismatch)
     ));
 
-    let remote = SftpRemote::new(config);
+    let remote =
+        SftpRemote::with_private_key(config, SecretString::from(private_key_contents), None);
     assert_eq!(remote.push(&source_vault).expect("push ciphertext"), 2);
     assert_eq!(remote.push(&source_vault).expect("idempotent push"), 0);
 

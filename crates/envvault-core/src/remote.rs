@@ -4,6 +4,7 @@ use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 
 use base64::Engine;
+use secrecy::{ExposeSecret, SecretString};
 use sha2::{Digest, Sha256};
 use ssh2::{RenameFlags, Session, Sftp};
 
@@ -13,11 +14,37 @@ use crate::{Error, Result};
 /// SFTP transport for immutable ciphertext objects. It never receives plaintext or an age key.
 pub struct SftpRemote {
     config: RemoteConfig,
+    credential: SshCredential,
+}
+
+enum SshCredential {
+    File,
+    Memory {
+        private_key: SecretString,
+        passphrase: Option<SecretString>,
+    },
 }
 
 impl SftpRemote {
     pub fn new(config: RemoteConfig) -> Self {
-        Self { config }
+        Self {
+            config,
+            credential: SshCredential::File,
+        }
+    }
+
+    pub fn with_private_key(
+        config: RemoteConfig,
+        private_key: SecretString,
+        passphrase: Option<SecretString>,
+    ) -> Self {
+        Self {
+            config,
+            credential: SshCredential::Memory {
+                private_key,
+                passphrase,
+            },
+        }
     }
 
     fn connect(&self) -> Result<(Session, Sftp)> {
@@ -28,14 +55,31 @@ impl SftpRemote {
         session.handshake().map_err(|_| Error::Remote)?;
         let host_key = session.host_key().ok_or(Error::Remote)?.0;
         verify_host_key(host_key, &self.config.host_key_sha256)?;
-        session
-            .userauth_pubkey_file(&self.config.username, None, &self.config.private_key, None)
-            .map_err(|_| Error::Remote)?;
+        match &self.credential {
+            SshCredential::File => session
+                .userauth_pubkey_file(&self.config.username, None, &self.config.private_key, None)
+                .map_err(|_| Error::Remote)?,
+            SshCredential::Memory {
+                private_key,
+                passphrase,
+            } => session
+                .userauth_pubkey_memory(
+                    &self.config.username,
+                    None,
+                    private_key.expose_secret(),
+                    passphrase.as_ref().map(ExposeSecret::expose_secret),
+                )
+                .map_err(|_| Error::Remote)?,
+        }
         if !session.authenticated() {
             return Err(Error::Remote);
         }
         let sftp = session.sftp().map_err(|_| Error::Remote)?;
         Ok((session, sftp))
+    }
+
+    pub fn test_connection(&self) -> Result<()> {
+        self.connect().map(|_| ())
     }
 
     pub fn push(&self, vault_root: &Path) -> Result<usize> {

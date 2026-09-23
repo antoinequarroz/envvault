@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use age::secrecy::{ExposeSecret, SecretString};
@@ -22,6 +22,21 @@ const SECRETS: &str = "secrets";
 const SECRET_CATALOG: &str = "catalog.age";
 const SECRET_CATALOG_VERSION: u32 = 1;
 const MAX_SSH_KEY_BYTES: u64 = 128 * 1024;
+
+fn valid_remote_path(value: &str) -> bool {
+    let mut components = Path::new(value).components();
+    if !matches!(components.next(), Some(Component::RootDir)) {
+        return false;
+    }
+    let mut saw_directory = false;
+    for component in components {
+        if !matches!(component, Component::Normal(_)) {
+            return false;
+        }
+        saw_directory = true;
+    }
+    saw_directory
+}
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct StoredSshKey {
@@ -494,19 +509,13 @@ impl Vault {
         Ok(summary)
     }
 
-    pub fn add_server_profile(
-        &self,
-        name: &str,
-        host: &str,
-        port: u16,
-        username: &str,
-        host_key_sha256: &str,
-        ssh_key_id: &str,
-    ) -> Result<ServerProfile> {
-        let name = name.trim();
-        let host = host.trim();
-        let username = username.trim();
-        let host_key_sha256 = host_key_sha256.trim();
+    pub fn add_server_profile(&self, input: NewServerProfile) -> Result<ServerProfile> {
+        let name = input.name.trim();
+        let host = input.host.trim();
+        let username = input.username.trim();
+        let remote_path = input.remote_path.trim();
+        let host_key_sha256 = input.host_key_sha256.trim();
+        let ssh_key_id = input.ssh_key_id.as_str();
         if name.is_empty()
             || name.len() > 100
             || host.is_empty()
@@ -515,7 +524,8 @@ impl Vault {
             || username.is_empty()
             || username.len() > 100
             || username.chars().any(char::is_whitespace)
-            || port == 0
+            || !valid_remote_path(remote_path)
+            || input.port == 0
             || !host_key_sha256.starts_with("SHA256:")
             || host_key_sha256.chars().any(char::is_whitespace)
         {
@@ -527,7 +537,7 @@ impl Vault {
             .iter()
             .any(|key| key.summary.id == ssh_key_id)
             || catalog.servers.iter().any(|server| {
-                server.host == host && server.port == port && server.username == username
+                server.host == host && server.port == input.port && server.username == username
             })
         {
             return Err(Error::InvalidData);
@@ -536,8 +546,9 @@ impl Vault {
             id: Uuid::new_v4().simple().to_string(),
             name: name.to_owned(),
             host: host.to_owned(),
-            port,
+            port: input.port,
             username: username.to_owned(),
+            remote_path: remote_path.to_owned(),
             host_key_sha256: host_key_sha256.to_owned(),
             ssh_key_id: ssh_key_id.to_owned(),
             created_at: Utc::now(),
@@ -556,6 +567,44 @@ impl Vault {
             return Err(Error::InvalidData);
         }
         self.write_secret_catalog(&catalog)
+    }
+
+    pub fn remote_for_server(
+        &self,
+        id: &str,
+        passphrase: Option<SecretString>,
+    ) -> Result<crate::SftpRemote> {
+        validate_opaque_id(id)?;
+        let catalog = self.read_secret_catalog()?;
+        let server = catalog
+            .servers
+            .iter()
+            .find(|server| server.id == id)
+            .ok_or(Error::InvalidData)?;
+        if !valid_remote_path(&server.remote_path) {
+            return Err(Error::InvalidData);
+        }
+        let key = catalog
+            .ssh_keys
+            .iter()
+            .find(|key| key.summary.id == server.ssh_key_id)
+            .ok_or(Error::InvalidData)?;
+        if key.summary.encrypted_at_source && passphrase.is_none() {
+            return Err(Error::InvalidData);
+        }
+        let config = RemoteConfig {
+            host: server.host.clone(),
+            port: server.port,
+            username: server.username.clone(),
+            remote_path: server.remote_path.clone(),
+            private_key: PathBuf::new(),
+            host_key_sha256: server.host_key_sha256.clone(),
+        };
+        Ok(crate::SftpRemote::with_private_key(
+            config,
+            SecretString::from(key.private_key.clone()),
+            passphrase,
+        ))
     }
 
     pub fn delete_ssh_key(&self, id: &str) -> Result<()> {
@@ -618,6 +667,14 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
+
+    #[test]
+    fn remote_paths_are_absolute_and_cannot_escape() {
+        assert!(valid_remote_path("/srv/envvault"));
+        assert!(!valid_remote_path("/"));
+        assert!(!valid_remote_path("srv/envvault"));
+        assert!(!valid_remote_path("/srv/../root"));
+    }
 
     #[derive(Default)]
     struct MemorySecrets(Mutex<HashMap<String, String>>);
@@ -816,18 +873,22 @@ mod tests {
         assert_eq!(key.algorithm, "ssh-ed25519");
         assert!(key.fingerprint.starts_with("SHA256:"));
         let server = vault
-            .add_server_profile(
-                "Test VPS",
-                "vps.invalid.test",
-                22,
-                "deploy",
-                "SHA256:fictitious-host-key",
-                &key.id,
-            )
+            .add_server_profile(NewServerProfile {
+                name: "Test VPS".into(),
+                host: "vps.invalid.test".into(),
+                port: 22,
+                username: "deploy".into(),
+                remote_path: "/srv/envvault".into(),
+                host_key_sha256: "SHA256:fictitious-host-key".into(),
+                ssh_key_id: key.id.clone(),
+            })
             .expect("add server");
         let inventory = vault.secret_inventory().expect("read inventory");
         assert_eq!(inventory.ssh_keys, std::slice::from_ref(&key));
         assert_eq!(inventory.servers, std::slice::from_ref(&server));
+        vault
+            .remote_for_server(&server.id, None)
+            .expect("build in-memory SFTP client");
 
         let catalog = fs::read(vault_dir.path().join(SECRETS).join(SECRET_CATALOG))
             .expect("read encrypted secret catalog");
