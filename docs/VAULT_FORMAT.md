@@ -7,10 +7,12 @@ This document is normative for `format_version: 1`.
 ```text
 vault/
 ├── vault.json
-└── backups/
-    └── 32-random-hex-backup-id/
-        ├── manifest.age
-        └── 32-random-hex-blob-id.age
+├── backups/
+│   └── 32-random-hex-backup-id/
+│       ├── manifest.age
+│       └── 32-random-hex-blob-id.age
+└── secrets/
+    └── catalog.age
 ```
 
 Temporary operations use dot-prefixed `pending` directories or `.part` files. Readers ignore pending backup directories; `verify` reports incomplete local backup directories.
@@ -31,6 +33,12 @@ The digest is inside authenticated encryption. It is used after decryption to de
 
 Every blob is an independent age ciphertext. No plaintext file, filename or content-derived identifier is written to the vault.
 
+## Encrypted secret catalog
+
+`secrets/catalog.age` is an atomically replaced age ciphertext. Its plaintext JSON contains imported OpenSSH private keys, their public metadata, and VPS profiles associating a server with a key identifier. Names, hosts, usernames, host fingerprints and private-key material are all encrypted at rest. Only public summaries are returned to the desktop UI; private-key contents never cross the Tauri command boundary.
+
+Imported private keys must be regular, non-symlink OpenSSH files no larger than 128 KiB. EnvVault derives the algorithm and SHA-256 public-key fingerprint from the parsed key and rejects duplicate fingerprints. A key referenced by a server profile cannot be deleted.
+
 ## Invariants
 
 1. Backup and blob IDs are exactly 32 hexadecimal characters.
@@ -40,6 +48,7 @@ Every blob is an independent age ciphertext. No plaintext file, filename or cont
 5. Restore validates all paths and collisions before writing any file, decrypts and hashes each object, then atomically installs it.
 6. Unix restore files have mode `0600`.
 7. SFTP receives only the `backups/` subtree and accepts only opaque backup directories, `manifest.age`, and opaque `.age` blob names.
+8. The secret catalog is written atomically with mode `0600` on Unix and never synchronized by the current SFTP transport.
 
 ## Compatibility
 

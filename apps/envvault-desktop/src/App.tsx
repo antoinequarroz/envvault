@@ -30,6 +30,26 @@ export type Dashboard = {
   projects: Project[];
   backups: Backup[];
   remote_configured: boolean;
+  ssh_keys: SshKey[];
+  servers: ServerProfile[];
+};
+export type SshKey = {
+  id: string;
+  name: string;
+  algorithm: string;
+  fingerprint: string;
+  encrypted_at_source: boolean;
+  created_at: string;
+};
+export type ServerProfile = {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  host_key_sha256: string;
+  ssh_key_id: string;
+  created_at: string;
 };
 export type Verify = {
   status: string;
@@ -48,10 +68,16 @@ export type RestorePlan = {
 
 export type CommandBridge = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
 export type DirectoryPicker = (title: string) => Promise<string | null>;
-export type Tab = "home" | "projects" | "add" | "history" | "restore" | "settings";
+export type FilePicker = (title: string) => Promise<string | null>;
+export type Tab = "home" | "projects" | "add" | "secrets" | "servers" | "history" | "restore" | "settings";
 
 const openDirectory: DirectoryPicker = async (title) => {
   const selection = await open({ directory: true, multiple: false, title });
+  return typeof selection === "string" ? selection : null;
+};
+
+const openFile: FilePicker = async (title) => {
+  const selection = await open({ directory: false, multiple: false, title });
   return typeof selection === "string" ? selection : null;
 };
 
@@ -60,12 +86,16 @@ const empty: Dashboard = {
   projects: [],
   backups: [],
   remote_configured: false,
+  ssh_keys: [],
+  servers: [],
 };
 
 const navItems: Array<{ id: Exclude<Tab, "restore">; icon: Parameters<typeof Icon>[0]["name"]; label: MessageKey }> = [
   { id: "home", icon: "home", label: "navOverview" },
   { id: "projects", icon: "projects", label: "navProjects" },
   { id: "add", icon: "plus", label: "navAddProject" },
+  { id: "secrets", icon: "key", label: "navSecrets" },
+  { id: "servers", icon: "server", label: "navServers" },
   { id: "history", icon: "history", label: "navHistory" },
   { id: "settings", icon: "settings", label: "navSettings" },
 ];
@@ -74,6 +104,8 @@ const tabLabels: Record<Tab, MessageKey> = {
   home: "navOverview",
   projects: "navProjects",
   add: "navAddProject",
+  secrets: "navSecrets",
+  servers: "navServers",
   history: "navHistory",
   restore: "navRestore",
   settings: "navSettings",
@@ -112,10 +144,12 @@ function EmptyState({
 export default function App({
   command = invoke as CommandBridge,
   directoryPicker = openDirectory,
+  filePicker = openFile,
   initialTab = "home",
 }: {
   command?: CommandBridge;
   directoryPicker?: DirectoryPicker;
+  filePicker?: FilePicker;
   initialTab?: Tab;
 }) {
   const [locale, setLocale] = useState<Locale>(() => loadLocale(window.localStorage));
@@ -146,11 +180,24 @@ export default function App({
   const [remotePath, setRemotePath] = useState("");
   const [remotePrivateKey, setRemotePrivateKey] = useState("");
   const [remoteHostKey, setRemoteHostKey] = useState("");
+  const [sshKeyName, setSshKeyName] = useState("");
+  const [sshKeyPath, setSshKeyPath] = useState("");
+  const [serverName, setServerName] = useState("");
+  const [serverHost, setServerHost] = useState("");
+  const [serverPort, setServerPort] = useState("22");
+  const [serverUsername, setServerUsername] = useState("");
+  const [serverHostKey, setServerHostKey] = useState("");
+  const [serverSshKey, setServerSshKey] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<{ kind: "key" | "server"; id: string } | null>(null);
 
   useEffect(() => {
     document.documentElement.lang = locale;
     document.title = t("productName");
   }, [locale, t]);
+
+  useEffect(() => {
+    if (pendingDelete) document.getElementById("delete-confirm-button")?.focus();
+  }, [pendingDelete]);
 
   const refresh = useCallback(async () => {
     try {
@@ -223,6 +270,78 @@ export default function App({
     } finally {
       setBusy(false);
     }
+  }
+
+  async function chooseSshKeyFile() {
+    setBusy(true);
+    setFieldError("");
+    setNotice(null);
+    try {
+      const selection = await filePicker(t("chooseSshKeyTitle"));
+      if (!selection) return;
+      setSshKeyPath(selection);
+      if (!sshKeyName) setSshKeyName(selection.split(/[\\/]/).filter(Boolean).at(-1) ?? t("sshKeyFallbackName"));
+    } catch {
+      setNotice({ kind: "error", text: t("errorChooseSshKey") });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function importSshKey() {
+    if (!sshKeyName.trim() || !sshKeyPath.trim()) {
+      setFieldError(t("fieldSshKey"));
+      return;
+    }
+    setFieldError("");
+    void action(
+      async () => {
+        await command("import_ssh_key", { name: sshKeyName, path: sshKeyPath });
+        setSshKeyName("");
+        setSshKeyPath("");
+      },
+      "successSshKeyImport",
+      "errorSshKeyImport",
+    );
+  }
+
+  function addServer() {
+    if (!serverName.trim() || !serverHost.trim() || !serverUsername.trim() || !serverSshKey || !serverHostKey.startsWith("SHA256:")) {
+      setFieldError(t("fieldServer"));
+      return;
+    }
+    setFieldError("");
+    void action(
+      async () => {
+        await command("add_server_profile", {
+          name: serverName,
+          host: serverHost,
+          port: Number(serverPort),
+          username: serverUsername,
+          hostKeySha256: serverHostKey,
+          sshKeyId: serverSshKey,
+        });
+        setServerName("");
+        setServerHost("");
+        setServerPort("22");
+        setServerUsername("");
+        setServerHostKey("");
+        setServerSshKey("");
+      },
+      "successServer",
+      "errorServer",
+    );
+  }
+
+  function confirmDelete() {
+    if (!pendingDelete) return;
+    const deleting = pendingDelete;
+    setPendingDelete(null);
+    void action(
+      () => command(deleting.kind === "key" ? "delete_ssh_key" : "delete_server_profile", { id: deleting.id }),
+      deleting.kind === "key" ? "successSshKeyDelete" : "successServerDelete",
+      deleting.kind === "key" ? "errorSshKeyDelete" : "errorServerDelete",
+    );
   }
 
   function addProject() {
@@ -468,6 +587,55 @@ export default function App({
           </section>
         )}
 
+        {tab === "secrets" && (
+          <section className="panel form">
+            <div className="section-heading"><div><h2>{t("secretsTitle")}</h2><p>{t("secretsHelp")}</p></div><span className="count-badge">{t("keysCount", data.ssh_keys.length)}</span></div>
+            <div className="secret-layout">
+              <div className="secret-list">
+                {data.ssh_keys.length === 0 ? <div className="inline-empty"><span className="empty-icon"><Icon name="key" /></span><div><h3>{t("secretsEmptyTitle")}</h3><p>{t("secretsEmptyBody")}</p></div></div> : data.ssh_keys.map((key) => (
+                  <article className="secret-row" key={key.id}>
+                    <span className="setting-icon"><Icon name="key" /></span>
+                    <div><strong>{key.name}</strong><small>{key.algorithm} · {key.encrypted_at_source ? t("sourceKeyEncrypted") : t("sourceKeyPlain")}</small><code>{key.fingerprint}</code></div>
+                    <button type="button" className="danger-button compact" disabled={busy} onClick={() => setPendingDelete({ kind: "key", id: key.id })}>{t("delete")}</button>
+                  </article>
+                ))}
+              </div>
+              <div className="selection-card import-card">
+                <div><h3>{t("importSshKeyTitle")}</h3><p>{t("importSshKeyHelp")}</p></div>
+                <label htmlFor="ssh-key-name">{t("sshKeyName")}</label><input id="ssh-key-name" value={sshKeyName} onChange={(event) => { setSshKeyName(event.target.value); setFieldError(""); }} placeholder={t("sshKeyNameExample")} />
+                <label htmlFor="ssh-key-path">{t("sshKeyFile")}</label>
+                <div className="file-picker-field"><input id="ssh-key-path" value={sshKeyPath} onChange={(event) => { setSshKeyPath(event.target.value); setFieldError(""); }} placeholder={t("sshKeyFileExample")} spellCheck={false} /><button type="button" className="secondary" disabled={busy} onClick={() => void chooseSshKeyFile()}><Icon name="folderOpen" />{t("chooseFile")}</button></div>
+                {fieldErrorNode}
+                <button type="button" disabled={busy} onClick={importSshKey}>{t("importAndEncrypt")}</button>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {tab === "servers" && (
+          <section className="panel form">
+            <div className="section-heading"><div><h2>{t("serversTitle")}</h2><p>{t("serversHelp")}</p></div><span className="count-badge">{t("serversCount", data.servers.length)}</span></div>
+            <div className="secret-layout">
+              <div className="secret-list">
+                {data.servers.length === 0 ? <div className="inline-empty"><span className="empty-icon"><Icon name="server" /></span><div><h3>{t("serversEmptyTitle")}</h3><p>{t("serversEmptyBody")}</p></div></div> : data.servers.map((server) => {
+                  const linkedKey = data.ssh_keys.find((key) => key.id === server.ssh_key_id);
+                  return <article className="secret-row" key={server.id}><span className="setting-icon"><Icon name="server" /></span><div><strong>{server.name}</strong><small>{server.username}@{server.host}:{server.port}</small><code>{linkedKey?.name ?? t("missingKey")}</code></div><button type="button" className="danger-button compact" disabled={busy} onClick={() => setPendingDelete({ kind: "server", id: server.id })}>{t("delete")}</button></article>;
+                })}
+              </div>
+              <div className="selection-card import-card">
+                <div><h3>{t("addServerTitle")}</h3><p>{t("addServerHelp")}</p></div>
+                <label htmlFor="server-name">{t("serverName")}</label><input id="server-name" value={serverName} onChange={(event) => { setServerName(event.target.value); setFieldError(""); }} placeholder={t("serverNameExample")} />
+                <div className="settings-grid remote-grid"><div><label htmlFor="server-host">{t("remoteHost")}</label><input id="server-host" value={serverHost} onChange={(event) => { setServerHost(event.target.value); setFieldError(""); }} placeholder={t("remoteHostExample")} spellCheck={false} /></div><div><label htmlFor="server-port">{t("remotePort")}</label><input id="server-port" type="number" min="1" max="65535" value={serverPort} onChange={(event) => setServerPort(event.target.value)} /></div></div>
+                <label htmlFor="server-username">{t("remoteUsername")}</label><input id="server-username" value={serverUsername} onChange={(event) => { setServerUsername(event.target.value); setFieldError(""); }} placeholder={t("remoteUsernameExample")} spellCheck={false} />
+                <label htmlFor="server-key">{t("serverSshKey")}</label><select id="server-key" value={serverSshKey} onChange={(event) => { setServerSshKey(event.target.value); setFieldError(""); }}><option value="">{t("chooseStoredKey")}</option>{data.ssh_keys.map((key) => <option value={key.id} key={key.id}>{key.name} · {key.fingerprint}</option>)}</select>
+                <label htmlFor="server-fingerprint">{t("hostFingerprint")}</label><input id="server-fingerprint" value={serverHostKey} onChange={(event) => { setServerHostKey(event.target.value); setFieldError(""); }} placeholder={t("hostFingerprintExample")} spellCheck={false} />
+                {data.ssh_keys.length === 0 && <p className="field-hint">{t("serverNeedsKey")}</p>}{fieldErrorNode}
+                <button type="button" disabled={busy || data.ssh_keys.length === 0} onClick={addServer}>{t("saveServer")}</button>
+              </div>
+            </div>
+          </section>
+        )}
+
         {tab === "restore" && (
           <section className="panel form">
             <div className="section-heading"><div><h2>{t("restoreTitle")}</h2><p>{t("restoreHelp")}</p></div></div>
@@ -521,6 +689,13 @@ export default function App({
             </div>
             <div className="warning"><Icon name="shield" /><p>{t("securityWarning")}</p></div>
           </section>
+        )}
+
+        {pendingDelete && (
+          <div className="delete-confirmation" role="alertdialog" aria-labelledby="delete-confirmation-title" aria-describedby="delete-confirmation-description">
+            <div><strong id="delete-confirmation-title">{t(pendingDelete.kind === "key" ? "deleteKeyTitle" : "deleteServerTitle")}</strong><p id="delete-confirmation-description">{t(pendingDelete.kind === "key" ? "deleteKeyHelp" : "deleteServerHelp")}</p></div>
+            <div className="button-row"><button type="button" className="secondary" onClick={() => setPendingDelete(null)}>{t("cancel")}</button><button id="delete-confirm-button" type="button" className="danger-button" disabled={busy} onClick={confirmDelete}>{t("deletePermanently")}</button></div>
+          </div>
         )}
       </main>
     </div>

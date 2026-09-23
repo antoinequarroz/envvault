@@ -102,3 +102,31 @@ pub struct RemoteConfig {
     pub private_key: PathBuf,
     pub host_key_sha256: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SshKeySummary {
+    pub id: String,
+    pub name: String,
+    pub algorithm: String,
+    pub fingerprint: String,
+    pub encrypted_at_source: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ServerProfile {
+    pub id: String,
+    pub name: String,
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub host_key_sha256: String,
+    pub ssh_key_id: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct SecretInventory {
+    pub ssh_keys: Vec<SshKeySummary>,
+    pub servers: Vec<ServerProfile>,
+}

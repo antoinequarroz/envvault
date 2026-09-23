@@ -8,6 +8,8 @@ const dashboard: Dashboard = {
   projects: [{ id: "p1", name: "Site", root: "/work/site", included: [".env"] }],
   backups: [{ id: "backup-123456789", project_id: "p1", project_name: "Site", created_at: "2026-09-23T08:00:00Z", file_count: 1 }],
   remote_configured: false,
+  ssh_keys: [],
+  servers: [],
 };
 
 function bridge(overrides: Record<string, unknown> = {}): CommandBridge {
@@ -78,6 +80,65 @@ describe("EnvVault interface flows", () => {
     expect(await screen.findByText(".env")).toBeInTheDocument();
     expect(screen.getByLabelText("Nom du projet")).toHaveValue("chosen-site");
     expect(calls).toContainEqual({ command: "scan_project", args: { path: "/work/chosen-site" } });
+  });
+
+  it("imports an SSH key through the native file picker without exposing its contents", async () => {
+    const user = userEvent.setup();
+    const calls: Array<{ command: string; args?: Record<string, unknown> }> = [];
+    const command: CommandBridge = async <T,>(commandName: string, args?: Record<string, unknown>) => {
+      calls.push({ command: commandName, args });
+      if (commandName === "dashboard") return dashboard as T;
+      return undefined as T;
+    };
+
+    render(<App command={command} filePicker={async () => "/Users/test/.ssh/id_ed25519"} initialTab="secrets" />);
+    await screen.findByRole("heading", { name: "Clés SSH privées" });
+    await user.click(screen.getByRole("button", { name: "Choisir un fichier" }));
+    expect(screen.getByLabelText("Fichier de clé privée")).toHaveValue("/Users/test/.ssh/id_ed25519");
+    expect(screen.getByLabelText("Nom de la clé")).toHaveValue("id_ed25519");
+    await user.click(screen.getByRole("button", { name: "Importer et chiffrer la clé" }));
+    await waitFor(() => expect(calls).toContainEqual({
+      command: "import_ssh_key",
+      args: { name: "id_ed25519", path: "/Users/test/.ssh/id_ed25519" },
+    }));
+    expect(document.body).not.toHaveTextContent("BEGIN OPENSSH PRIVATE KEY");
+  });
+
+  it("stores a server profile by encrypted SSH-key identifier", async () => {
+    const user = userEvent.setup();
+    const storedKey = {
+      id: "key-1",
+      name: "Production",
+      algorithm: "ssh-ed25519",
+      fingerprint: "SHA256:test",
+      encrypted_at_source: false,
+      created_at: "2026-09-23T09:00:00Z",
+    };
+    const calls: Array<{ command: string; args?: Record<string, unknown> }> = [];
+    const command: CommandBridge = async <T,>(commandName: string, args?: Record<string, unknown>) => {
+      calls.push({ command: commandName, args });
+      if (commandName === "dashboard") return { ...dashboard, ssh_keys: [storedKey] } as T;
+      return undefined as T;
+    };
+
+    render(<App command={command} initialTab="servers" />);
+    await user.type(await screen.findByLabelText("Nom du serveur"), "VPS Suisse");
+    await user.type(screen.getByLabelText("Hôte"), "vps.example.test");
+    await user.type(screen.getByLabelText("Nom d’utilisateur"), "deploy");
+    await user.selectOptions(screen.getByLabelText("Clé SSH associée"), "key-1");
+    await user.type(screen.getByLabelText("Empreinte de la clé d’hôte approuvée"), "SHA256:verified-host");
+    await user.click(screen.getByRole("button", { name: "Enregistrer le serveur" }));
+    await waitFor(() => expect(calls).toContainEqual({
+      command: "add_server_profile",
+      args: {
+        name: "VPS Suisse",
+        host: "vps.example.test",
+        port: 22,
+        username: "deploy",
+        hostKeySha256: "SHA256:verified-host",
+        sshKeyId: "key-1",
+      },
+    }));
   });
 
   it("requires explicit collision confirmation before restore", async () => {

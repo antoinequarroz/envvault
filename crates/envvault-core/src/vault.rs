@@ -8,7 +8,7 @@ use keyring::Entry;
 use serde::de::DeserializeOwned;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::crypto;
 use crate::model::*;
@@ -18,6 +18,39 @@ use crate::{Error, Result};
 
 const CONFIG: &str = "vault.json";
 const BACKUPS: &str = "backups";
+const SECRETS: &str = "secrets";
+const SECRET_CATALOG: &str = "catalog.age";
+const SECRET_CATALOG_VERSION: u32 = 1;
+const MAX_SSH_KEY_BYTES: u64 = 128 * 1024;
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct StoredSshKey {
+    summary: SshKeySummary,
+    private_key: String,
+}
+
+impl Drop for StoredSshKey {
+    fn drop(&mut self) {
+        self.private_key.zeroize();
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct SecretCatalog {
+    format_version: u32,
+    ssh_keys: Vec<StoredSshKey>,
+    servers: Vec<ServerProfile>,
+}
+
+impl Default for SecretCatalog {
+    fn default() -> Self {
+        Self {
+            format_version: SECRET_CATALOG_VERSION,
+            ssh_keys: vec![],
+            servers: vec![],
+        }
+    }
+}
 
 pub trait SecretStore: Send + Sync {
     fn load(&self, vault_id: &str) -> Result<SecretString>;
@@ -78,6 +111,7 @@ impl Vault {
             return Err(Error::AlreadyInitialized);
         }
         fs::create_dir_all(self.root.join(BACKUPS))?;
+        fs::create_dir_all(self.root.join(SECRETS))?;
         let (identity, recipient) = crypto::generate_identity();
         let config = VaultConfig {
             format_version: FORMAT_VERSION,
@@ -408,6 +442,160 @@ impl Vault {
         }
         self.secrets.save(&config.vault_id, &identity)
     }
+
+    pub fn secret_inventory(&self) -> Result<SecretInventory> {
+        let catalog = self.read_secret_catalog()?;
+        Ok(SecretInventory {
+            ssh_keys: catalog
+                .ssh_keys
+                .iter()
+                .map(|key| key.summary.clone())
+                .collect(),
+            servers: catalog.servers.clone(),
+        })
+    }
+
+    pub fn import_ssh_key(&self, name: &str, source: &Path) -> Result<SshKeySummary> {
+        let name = name.trim();
+        if name.is_empty() || name.len() > 100 {
+            return Err(Error::InvalidData);
+        }
+        let metadata = fs::symlink_metadata(source)?;
+        if metadata.file_type().is_symlink() {
+            return Err(Error::Symlink);
+        }
+        if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_SSH_KEY_BYTES {
+            return Err(Error::InvalidData);
+        }
+        let bytes = Zeroizing::new(fs::read(source)?);
+        let parsed = ssh_key::PrivateKey::from_openssh(&*bytes).map_err(|_| Error::InvalidData)?;
+        let summary = SshKeySummary {
+            id: Uuid::new_v4().simple().to_string(),
+            name: name.to_owned(),
+            algorithm: parsed.algorithm().to_string(),
+            fingerprint: parsed.fingerprint(Default::default()).to_string(),
+            encrypted_at_source: parsed.is_encrypted(),
+            created_at: Utc::now(),
+        };
+        let private_key = String::from_utf8(bytes.to_vec()).map_err(|_| Error::InvalidData)?;
+        let mut catalog = self.read_secret_catalog()?;
+        if catalog
+            .ssh_keys
+            .iter()
+            .any(|key| key.summary.fingerprint == summary.fingerprint)
+        {
+            return Err(Error::Collision(PathBuf::from("ssh-key-fingerprint")));
+        }
+        catalog.ssh_keys.push(StoredSshKey {
+            summary: summary.clone(),
+            private_key,
+        });
+        self.write_secret_catalog(&catalog)?;
+        Ok(summary)
+    }
+
+    pub fn add_server_profile(
+        &self,
+        name: &str,
+        host: &str,
+        port: u16,
+        username: &str,
+        host_key_sha256: &str,
+        ssh_key_id: &str,
+    ) -> Result<ServerProfile> {
+        let name = name.trim();
+        let host = host.trim();
+        let username = username.trim();
+        let host_key_sha256 = host_key_sha256.trim();
+        if name.is_empty()
+            || name.len() > 100
+            || host.is_empty()
+            || host.len() > 255
+            || host.chars().any(char::is_whitespace)
+            || username.is_empty()
+            || username.len() > 100
+            || username.chars().any(char::is_whitespace)
+            || port == 0
+            || !host_key_sha256.starts_with("SHA256:")
+            || host_key_sha256.chars().any(char::is_whitespace)
+        {
+            return Err(Error::InvalidData);
+        }
+        let mut catalog = self.read_secret_catalog()?;
+        if !catalog
+            .ssh_keys
+            .iter()
+            .any(|key| key.summary.id == ssh_key_id)
+            || catalog.servers.iter().any(|server| {
+                server.host == host && server.port == port && server.username == username
+            })
+        {
+            return Err(Error::InvalidData);
+        }
+        let server = ServerProfile {
+            id: Uuid::new_v4().simple().to_string(),
+            name: name.to_owned(),
+            host: host.to_owned(),
+            port,
+            username: username.to_owned(),
+            host_key_sha256: host_key_sha256.to_owned(),
+            ssh_key_id: ssh_key_id.to_owned(),
+            created_at: Utc::now(),
+        };
+        catalog.servers.push(server.clone());
+        self.write_secret_catalog(&catalog)?;
+        Ok(server)
+    }
+
+    pub fn delete_server_profile(&self, id: &str) -> Result<()> {
+        validate_opaque_id(id)?;
+        let mut catalog = self.read_secret_catalog()?;
+        let before = catalog.servers.len();
+        catalog.servers.retain(|server| server.id != id);
+        if catalog.servers.len() == before {
+            return Err(Error::InvalidData);
+        }
+        self.write_secret_catalog(&catalog)
+    }
+
+    pub fn delete_ssh_key(&self, id: &str) -> Result<()> {
+        validate_opaque_id(id)?;
+        let mut catalog = self.read_secret_catalog()?;
+        if catalog.servers.iter().any(|server| server.ssh_key_id == id) {
+            return Err(Error::InvalidData);
+        }
+        let before = catalog.ssh_keys.len();
+        catalog.ssh_keys.retain(|key| key.summary.id != id);
+        if catalog.ssh_keys.len() == before {
+            return Err(Error::InvalidData);
+        }
+        self.write_secret_catalog(&catalog)
+    }
+
+    fn read_secret_catalog(&self) -> Result<SecretCatalog> {
+        let path = self.root.join(SECRETS).join(SECRET_CATALOG);
+        if !path.exists() {
+            return Ok(SecretCatalog::default());
+        }
+        let encrypted = fs::read(path)?;
+        let plaintext = crypto::decrypt(&self.identity()?, &encrypted)?;
+        let catalog: SecretCatalog = parse_json(&plaintext)?;
+        if catalog.format_version != SECRET_CATALOG_VERSION {
+            return Err(Error::InvalidData);
+        }
+        Ok(catalog)
+    }
+
+    fn write_secret_catalog(&self, catalog: &SecretCatalog) -> Result<()> {
+        let config = self.config()?;
+        let encoded = Zeroizing::new(serde_json::to_vec(catalog)?);
+        let encrypted = crypto::encrypt(&config.recipient, &encoded)?;
+        atomic_write(
+            &self.root.join(SECRETS).join(SECRET_CATALOG),
+            &encrypted,
+            0o600,
+        )
+    }
 }
 
 fn parse_json<T: DeserializeOwned>(bytes: &[u8]) -> Result<T> {
@@ -606,6 +794,54 @@ mod tests {
         assert_eq!(
             vault.verify().expect("verify").status,
             VerifyStatus::Corrupt
+        );
+    }
+
+    #[test]
+    fn ssh_keys_and_servers_live_only_in_the_encrypted_catalog() {
+        let (vault_dir, project_dir, vault, _project) = fixture();
+        let private_key = ssh_key::PrivateKey::random(
+            &mut ssh_key::rand_core::OsRng,
+            ssh_key::Algorithm::Ed25519,
+        )
+        .expect("generate test ssh key")
+        .to_openssh(ssh_key::LineEnding::LF)
+        .expect("encode test ssh key");
+        let key_path = project_dir.path().join("test-ssh-key");
+        fs::write(&key_path, private_key.as_bytes()).expect("write test ssh key");
+
+        let key = vault
+            .import_ssh_key("Test deployment key", &key_path)
+            .expect("import ssh key");
+        assert_eq!(key.algorithm, "ssh-ed25519");
+        assert!(key.fingerprint.starts_with("SHA256:"));
+        let server = vault
+            .add_server_profile(
+                "Test VPS",
+                "vps.invalid.test",
+                22,
+                "deploy",
+                "SHA256:fictitious-host-key",
+                &key.id,
+            )
+            .expect("add server");
+        let inventory = vault.secret_inventory().expect("read inventory");
+        assert_eq!(inventory.ssh_keys, std::slice::from_ref(&key));
+        assert_eq!(inventory.servers, std::slice::from_ref(&server));
+
+        let catalog = fs::read(vault_dir.path().join(SECRETS).join(SECRET_CATALOG))
+            .expect("read encrypted secret catalog");
+        let visible = String::from_utf8_lossy(&catalog);
+        assert!(!visible.contains("Test deployment key"));
+        assert!(!visible.contains("BEGIN OPENSSH PRIVATE KEY"));
+        assert!(vault.delete_ssh_key(&key.id).is_err());
+        vault
+            .delete_server_profile(&server.id)
+            .expect("delete server");
+        vault.delete_ssh_key(&key.id).expect("delete unlinked key");
+        assert_eq!(
+            vault.secret_inventory().expect("empty inventory"),
+            SecretInventory::default()
         );
     }
 }

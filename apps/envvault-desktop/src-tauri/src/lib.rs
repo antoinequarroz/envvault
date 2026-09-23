@@ -5,7 +5,7 @@ use std::sync::Arc;
 use directories::ProjectDirs;
 use envvault_core::{
     BackupSummary, KeyringSecretStore, LocalState, Project, RemoteConfig, RestorePlan, ScanOptions,
-    ScannedFile, SftpRemote, Vault, VerifyReport, scan,
+    ScannedFile, ServerProfile, SftpRemote, SshKeySummary, Vault, VerifyReport, scan,
 };
 use secrecy::SecretString;
 use serde::Serialize;
@@ -16,6 +16,8 @@ struct Dashboard {
     projects: Vec<Project>,
     backups: Vec<BackupSummary>,
     remote_configured: bool,
+    ssh_keys: Vec<SshKeySummary>,
+    servers: Vec<ServerProfile>,
 }
 
 fn paths() -> Result<(PathBuf, PathBuf), String> {
@@ -53,15 +55,22 @@ fn dashboard() -> Result<Dashboard, String> {
                 projects: vec![],
                 backups: vec![],
                 remote_configured: false,
+                ssh_keys: vec![],
+                servers: vec![],
             });
         }
     };
     let backups = vault(&state).history(None).map_err(|e| e.to_string())?;
+    let inventory = vault(&state)
+        .secret_inventory()
+        .map_err(|e| e.to_string())?;
     Ok(Dashboard {
         initialized: true,
         projects: state.projects.clone(),
         backups,
         remote_configured: state.remote.is_some(),
+        ssh_keys: inventory.ssh_keys,
+        servers: inventory.servers,
     })
 }
 
@@ -265,6 +274,43 @@ fn sync_remote(direction: String) -> Result<usize, String> {
     }
 }
 
+#[tauri::command]
+fn import_ssh_key(name: String, path: String) -> Result<SshKeySummary, String> {
+    let state = load_state()?;
+    vault(&state)
+        .import_ssh_key(&name, PathBuf::from(path).as_path())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn add_server_profile(
+    name: String,
+    host: String,
+    port: u16,
+    username: String,
+    host_key_sha256: String,
+    ssh_key_id: String,
+) -> Result<ServerProfile, String> {
+    let state = load_state()?;
+    vault(&state)
+        .add_server_profile(&name, &host, port, &username, &host_key_sha256, &ssh_key_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_ssh_key(id: String) -> Result<(), String> {
+    let state = load_state()?;
+    vault(&state).delete_ssh_key(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_server_profile(id: String) -> Result<(), String> {
+    let state = load_state()?;
+    vault(&state)
+        .delete_server_profile(&id)
+        .map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -282,7 +328,11 @@ pub fn run() {
             export_recovery,
             import_recovery,
             configure_remote,
-            sync_remote
+            sync_remote,
+            import_ssh_key,
+            add_server_profile,
+            delete_ssh_key,
+            delete_server_profile
         ])
         .run(tauri::generate_context!())
         .expect("failed to run EnvVault desktop");

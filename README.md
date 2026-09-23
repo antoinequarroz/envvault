@@ -6,6 +6,8 @@ EnvVault is a local-first desktop application and CLI for making encrypted, vers
 
 The desktop interface is available in French and English. French is the default, and the selected language is stored locally on the device.
 
+The desktop app also includes an encrypted SSH-key catalog and VPS profiles. OpenSSH private keys are validated locally, limited to 128 KiB, and stored only inside an age-encrypted catalog. The UI receives names, algorithms and public fingerprints, never private-key contents.
+
 ## Why
 
 Environment files often contain development credentials but are intentionally excluded from Git. Copying them by hand is fragile; putting them in ordinary cloud storage exposes plaintext. EnvVault keeps the format simple and auditable while leaving secret values invisible in the UI, logs and normal command output.
@@ -108,7 +110,7 @@ envvault sync pull
 
 EnvVault uses the SSH library directly, so secrets are not placed in subprocess arguments. Unknown or changed host keys are rejected. Uploads use `.part` files followed by an atomic rename; pulls use local pending directories. Existing immutable backup IDs are never silently replaced, and remote deletion is never automatic.
 
-Current sync is explicit push/pull, not a background bidirectional merge. A remote server should restrict the account to the configured directory. The SSH private key path is local configuration; the key itself is never copied into the vault.
+Current sync is explicit push/pull, not a background bidirectional merge. A remote server should restrict the account to the configured directory. The SFTP configuration still uses a dedicated local key path. Separately, the desktop Secrets view can import an encrypted copy into the vault and associate it with VPS profiles; direct `ssh-agent` and SFTP use of stored keys are not enabled yet.
 
 See [`docs/VPS.md`](docs/VPS.md) for a dedicated-account checklist and safe first-use procedure.
 
@@ -151,6 +153,7 @@ Tests cover age round trips, wrong keys, corruption, recovery, encrypted-manifes
 - File changes are represented by new immutable backup versions; content deduplication is intentionally omitted to avoid deterministic identifiers and extra complexity.
 - Windows applies restrictive creation semantics available to the platform, but the explicit `0600` assertion is Unix-only.
 - There is no key rotation workflow in version 1.
+- Stored SSH keys are catalogued and associated with VPS profiles, but are not yet exported, loaded into `ssh-agent`, or used directly by the SFTP client.
 - Desktop prerelease bundles are not yet code-signed or notarized.
 
 ## License

@@ -15,6 +15,8 @@ export const fr = {
   navOverview: "Vue d’ensemble",
   navProjects: "Projets",
   navAddProject: "Ajouter un projet",
+  navSecrets: "Secrets",
+  navServers: "Serveurs",
   navHistory: "Historique",
   navSettings: "Réglages",
   navRestore: "Restaurer",
@@ -67,6 +69,44 @@ export const fr = {
   candidateFile: "Candidat sélectionné",
   templateFile: "Modèle désactivé par défaut",
   confirmProjectSelection: "Ajouter le projet sélectionné",
+  secretsTitle: "Clés SSH privées",
+  secretsHelp: "Les clés importées sont validées puis chiffrées dans le coffre. Leur contenu n’est jamais renvoyé à l’interface.",
+  keysCount: (count: number) => count === 1 ? "1 clé" : `${count} clés`,
+  secretsEmptyTitle: "Aucune clé SSH stockée",
+  secretsEmptyBody: "Importez une clé privée OpenSSH pour l’associer ensuite à vos serveurs.",
+  importSshKeyTitle: "Importer une clé",
+  importSshKeyHelp: "Le fichier source est lu localement. EnvVault conserve une copie chiffrée et ne modifie pas l’original.",
+  sshKeyName: "Nom de la clé",
+  sshKeyNameExample: "Déploiement production",
+  sshKeyFile: "Fichier de clé privée",
+  sshKeyFileExample: "/Users/vous/.ssh/id_ed25519",
+  sshKeyFallbackName: "Clé SSH",
+  chooseFile: "Choisir un fichier",
+  chooseSshKeyTitle: "Choisir une clé privée OpenSSH",
+  importAndEncrypt: "Importer et chiffrer la clé",
+  sourceKeyEncrypted: "protégée par une phrase à la source",
+  sourceKeyPlain: "non chiffrée à la source",
+  serversTitle: "Serveurs VPS",
+  serversHelp: "Associez chaque serveur à une clé chiffrée et conservez l’empreinte d’hôte vérifiée séparément.",
+  serversCount: (count: number) => count === 1 ? "1 serveur" : `${count} serveurs`,
+  serversEmptyTitle: "Aucun serveur enregistré",
+  serversEmptyBody: "Ajoutez une clé SSH, puis créez une fiche pour chaque VPS.",
+  addServerTitle: "Ajouter un serveur",
+  addServerHelp: "L’empreinte d’hôte doit être obtenue par un canal fiable avant la première connexion.",
+  serverName: "Nom du serveur",
+  serverNameExample: "Production Suisse",
+  serverSshKey: "Clé SSH associée",
+  chooseStoredKey: "Choisir une clé stockée",
+  serverNeedsKey: "Importez d’abord une clé SSH dans la section Secrets.",
+  saveServer: "Enregistrer le serveur",
+  missingKey: "Clé introuvable",
+  delete: "Supprimer",
+  cancel: "Annuler",
+  deletePermanently: "Supprimer définitivement",
+  deleteKeyTitle: "Supprimer cette clé SSH ?",
+  deleteKeyHelp: "Cette action retire définitivement la clé chiffrée. Une clé associée à un serveur ne peut pas être supprimée.",
+  deleteServerTitle: "Supprimer ce serveur ?",
+  deleteServerHelp: "La fiche du serveur sera supprimée. La clé SSH associée restera dans le coffre.",
   historyTitle: "Historique des sauvegardes",
   historyEmptyTitle: "Aucune sauvegarde créée",
   historyEmptyBody:
@@ -130,6 +170,10 @@ export const fr = {
   successBackup: "Sauvegarde chiffrée créée.",
   successProject:
     "Projet ajouté. Créez sa première sauvegarde lorsque les fichiers sont prêts.",
+  successSshKeyImport: "Clé SSH validée et chiffrée dans le coffre.",
+  successSshKeyDelete: "Clé SSH supprimée du coffre.",
+  successServer: "Serveur enregistré avec sa clé et son empreinte d’hôte.",
+  successServerDelete: "Fiche serveur supprimée.",
   successVerify: "Vérification d’intégrité terminée.",
   successRestore:
     "Restauration terminée avec des permissions de fichier restrictives.",
@@ -149,6 +193,15 @@ export const fr = {
     "Impossible d’analyser ce dossier. Vérifiez que le chemin existe et que vous avez l’autorisation de le lire.",
   errorChooseProjectFolder:
     "Impossible d’ouvrir le sélecteur de dossiers. Réessayez ou saisissez le chemin manuellement.",
+  errorChooseSshKey:
+    "Impossible d’ouvrir le sélecteur de fichiers. Réessayez ou saisissez le chemin manuellement.",
+  errorSshKeyImport:
+    "Impossible d’importer cette clé. Utilisez une clé privée au format OpenSSH, lisible et inférieure à 128 Ko.",
+  errorSshKeyDelete:
+    "Impossible de supprimer cette clé. Supprimez d’abord les serveurs qui l’utilisent.",
+  errorServer:
+    "Impossible d’enregistrer ce serveur. Vérifiez les champs, la clé choisie et l’empreinte SHA256.",
+  errorServerDelete: "Impossible de supprimer cette fiche serveur.",
   errorProject:
     "Impossible d’ajouter ce projet. Vérifiez le dossier et la sélection, puis réessayez.",
   errorBackup:
@@ -173,6 +226,8 @@ export const fr = {
     "Indiquez un dossier de projet existant avant de lancer l’analyse.",
   fieldProjectSelection:
     "Choisissez un nom et au moins un fichier avant d’ajouter le projet.",
+  fieldSshKey: "Choisissez un fichier de clé privée et donnez-lui un nom.",
+  fieldServer: "Renseignez le nom, l’hôte, le port, l’utilisateur, la clé et une empreinte SHA256 vérifiée.",
   fieldRestoreDestination:
     "Indiquez un dossier de destination avant de prévisualiser la restauration.",
   fieldRecovery:
@@ -205,6 +260,8 @@ export const en: Messages = {
   navOverview: "Overview",
   navProjects: "Projects",
   navAddProject: "Add project",
+  navSecrets: "Secrets",
+  navServers: "Servers",
   navHistory: "History",
   navSettings: "Settings",
   navRestore: "Restore",
@@ -255,6 +312,44 @@ export const en: Messages = {
   candidateFile: "Selected candidate",
   templateFile: "Template off by default",
   confirmProjectSelection: "Add selected project",
+  secretsTitle: "Private SSH keys",
+  secretsHelp: "Imported keys are validated, then encrypted inside the vault. Their contents are never returned to the interface.",
+  keysCount: (count: number) => count === 1 ? "1 key" : `${count} keys`,
+  secretsEmptyTitle: "No stored SSH keys",
+  secretsEmptyBody: "Import an OpenSSH private key, then associate it with your servers.",
+  importSshKeyTitle: "Import a key",
+  importSshKeyHelp: "The source file is read locally. EnvVault stores an encrypted copy and does not modify the original.",
+  sshKeyName: "Key name",
+  sshKeyNameExample: "Production deployment",
+  sshKeyFile: "Private-key file",
+  sshKeyFileExample: "/Users/you/.ssh/id_ed25519",
+  sshKeyFallbackName: "SSH key",
+  chooseFile: "Choose file",
+  chooseSshKeyTitle: "Choose an OpenSSH private key",
+  importAndEncrypt: "Import and encrypt key",
+  sourceKeyEncrypted: "passphrase-protected at source",
+  sourceKeyPlain: "unencrypted at source",
+  serversTitle: "VPS servers",
+  serversHelp: "Associate each server with an encrypted key and retain its independently verified host fingerprint.",
+  serversCount: (count: number) => count === 1 ? "1 server" : `${count} servers`,
+  serversEmptyTitle: "No saved servers",
+  serversEmptyBody: "Add an SSH key, then create a profile for each VPS.",
+  addServerTitle: "Add a server",
+  addServerHelp: "Obtain the host fingerprint through a trusted channel before the first connection.",
+  serverName: "Server name",
+  serverNameExample: "Swiss production",
+  serverSshKey: "Associated SSH key",
+  chooseStoredKey: "Choose a stored key",
+  serverNeedsKey: "Import an SSH key in Secrets first.",
+  saveServer: "Save server",
+  missingKey: "Missing key",
+  delete: "Delete",
+  cancel: "Cancel",
+  deletePermanently: "Delete permanently",
+  deleteKeyTitle: "Delete this SSH key?",
+  deleteKeyHelp: "This permanently removes the encrypted key. A key associated with a server cannot be deleted.",
+  deleteServerTitle: "Delete this server?",
+  deleteServerHelp: "The server profile will be deleted. Its associated SSH key will remain in the vault.",
   historyTitle: "Backup history",
   historyEmptyTitle: "No backups created",
   historyEmptyBody:
@@ -317,6 +412,10 @@ export const en: Messages = {
   successBackup: "Encrypted backup created.",
   successProject:
     "Project added. Create its first backup when the files are ready.",
+  successSshKeyImport: "SSH key validated and encrypted inside the vault.",
+  successSshKeyDelete: "SSH key deleted from the vault.",
+  successServer: "Server saved with its key and host fingerprint.",
+  successServerDelete: "Server profile deleted.",
   successVerify: "Integrity verification complete.",
   successRestore: "Restore completed with restrictive file permissions.",
   successRecoveryExport:
@@ -335,6 +434,15 @@ export const en: Messages = {
     "Unable to scan this folder. Check that the path exists and that you can read it.",
   errorChooseProjectFolder:
     "Unable to open the folder picker. Try again or enter the path manually.",
+  errorChooseSshKey:
+    "Unable to open the file picker. Try again or enter the path manually.",
+  errorSshKeyImport:
+    "Unable to import this key. Use a readable OpenSSH private key smaller than 128 KB.",
+  errorSshKeyDelete:
+    "Unable to delete this key. Delete the servers using it first.",
+  errorServer:
+    "Unable to save this server. Check the fields, selected key, and SHA256 fingerprint.",
+  errorServerDelete: "Unable to delete this server profile.",
   errorProject:
     "Unable to add this project. Check the folder and selection, then try again.",
   errorBackup:
@@ -358,6 +466,8 @@ export const en: Messages = {
   fieldProjectPath: "Enter an existing project folder before scanning.",
   fieldProjectSelection:
     "Choose a name and at least one file before adding the project.",
+  fieldSshKey: "Choose a private-key file and give it a name.",
+  fieldServer: "Enter the name, host, port, username, key, and a verified SHA256 fingerprint.",
   fieldRestoreDestination:
     "Enter a destination folder before previewing the restore.",
   fieldRecovery:

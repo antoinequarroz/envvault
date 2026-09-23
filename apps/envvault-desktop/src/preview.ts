@@ -29,6 +29,28 @@ const dashboard: Dashboard = {
     },
   ],
   remote_configured: true,
+  ssh_keys: [
+    {
+      id: "ssh-key-1",
+      name: "Déploiement production",
+      algorithm: "ssh-ed25519",
+      fingerprint: "SHA256:9nY4PreviewFingerprintOnly",
+      encrypted_at_source: false,
+      created_at: "2026-09-23T09:00:00.000Z",
+    },
+  ],
+  servers: [
+    {
+      id: "server-1",
+      name: "Production Suisse",
+      host: "vps.exemple.test",
+      port: 22,
+      username: "deploy",
+      host_key_sha256: "SHA256:PreviewHostFingerprintOnly",
+      ssh_key_id: "ssh-key-1",
+      created_at: "2026-09-23T09:05:00.000Z",
+    },
+  ],
 };
 
 const scanned: Scanned[] = [
@@ -54,7 +76,7 @@ export function previewFromLocation(): { command?: CommandBridge; initialTab?: T
   if (!mode) return {};
   return {
     command: createPreviewBridge(mode),
-    initialTab: requestedTab && ["home", "projects", "add", "history", "restore", "settings"].includes(requestedTab) ? requestedTab : "home",
+    initialTab: requestedTab && ["home", "projects", "add", "secrets", "servers", "history", "restore", "settings"].includes(requestedTab) ? requestedTab : "home",
   };
 }
 
@@ -63,7 +85,7 @@ export function createPreviewBridge(mode: PreviewMode): CommandBridge {
     if (command === "dashboard") {
       if (mode === "loading") return new Promise<T>(() => undefined);
       if (mode === "error") throw new Error("Preview dashboard failure");
-      if (mode === "empty") return { initialized: true, projects: [], backups: [], remote_configured: false } as T;
+      if (mode === "empty") return { initialized: true, projects: [], backups: [], remote_configured: false, ssh_keys: [], servers: [] } as T;
       return dashboard as T;
     }
     if (command === "scan_project") return scanned as T;
