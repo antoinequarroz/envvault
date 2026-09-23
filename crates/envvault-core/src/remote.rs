@@ -6,10 +6,19 @@ use std::path::{Path, PathBuf};
 use base64::Engine;
 use secrecy::{ExposeSecret, SecretString};
 use sha2::{Digest, Sha256};
-use ssh2::{RenameFlags, Session, Sftp};
+use ssh2::{MethodType, RenameFlags, Session, Sftp};
 
 use crate::model::RemoteConfig;
 use crate::{Error, Result};
+
+const HOST_KEY_ALGORITHMS: &[&str] = &[
+    "ssh-ed25519",
+    "ecdsa-sha2-nistp256",
+    "ecdsa-sha2-nistp384",
+    "ecdsa-sha2-nistp521",
+    "rsa-sha2-512",
+    "rsa-sha2-256",
+];
 
 /// SFTP transport for immutable ciphertext objects. It never receives plaintext or an age key.
 pub struct SftpRemote {
@@ -48,13 +57,32 @@ impl SftpRemote {
     }
 
     fn connect(&self) -> Result<(Session, Sftp)> {
-        let tcp = TcpStream::connect((&*self.config.host, self.config.port))
-            .map_err(|_| Error::Remote)?;
-        let mut session = Session::new().map_err(|_| Error::Remote)?;
-        session.set_tcp_stream(tcp);
-        session.handshake().map_err(|_| Error::Remote)?;
-        let host_key = session.host_key().ok_or(Error::Remote)?.0;
-        verify_host_key(host_key, &self.config.host_key_sha256)?;
+        let mut negotiated_session = None;
+        let mut saw_host_key = false;
+        for algorithm in HOST_KEY_ALGORITHMS {
+            let tcp = TcpStream::connect((&*self.config.host, self.config.port))
+                .map_err(|_| Error::Remote)?;
+            let mut session = Session::new().map_err(|_| Error::Remote)?;
+            session.set_tcp_stream(tcp);
+            if session.method_pref(MethodType::HostKey, algorithm).is_err()
+                || session.handshake().is_err()
+            {
+                continue;
+            }
+            let Some(host_key) = session.host_key().map(|key| key.0) else {
+                continue;
+            };
+            saw_host_key = true;
+            if verify_host_key(host_key, &self.config.host_key_sha256).is_ok() {
+                negotiated_session = Some(session);
+                break;
+            }
+        }
+        let session = negotiated_session.ok_or(if saw_host_key {
+            Error::HostKeyMismatch
+        } else {
+            Error::Remote
+        })?;
         match &self.credential {
             SshCredential::File => session
                 .userauth_pubkey_file(&self.config.username, None, &self.config.private_key, None)
