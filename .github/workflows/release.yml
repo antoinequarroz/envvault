@@ -37,6 +37,8 @@ jobs:
         working-directory: apps/envvault-desktop
       - run: npm run lint
         working-directory: apps/envvault-desktop
+      - run: npm test
+        working-directory: apps/envvault-desktop
       - run: npm run build
         working-directory: apps/envvault-desktop
       - run: npm audit --audit-level=high
@@ -87,6 +89,8 @@ jobs:
           releaseName: EnvVault ${{ github.ref_name }} — unsigned prerelease
           releaseBody: |
             This is a testable, security-conscious prerelease. The desktop bundles are **unsigned and not notarized**. Windows and macOS may warn or refuse to open them. Do not bypass operating-system security controls; if a bundle is blocked, build EnvVault from the tagged source instead.
+
+            This build includes the redesigned graphite-and-violet EnvVault interface, complete French and English catalogs, French as the persisted default, local font assets, and tested restore-confirmation and error states.
 
             Use only fictitious `.env` files while evaluating this prerelease. Review `SECURITY.md` and `docs/TESTING.md` before use. No real credentials, signing certificates, or production VPS access were used to create or test these artifacts.
           releaseDraft: false

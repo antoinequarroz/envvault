@@ -1,7 +1,25 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#14251e"/>
-  <path d="M156 231v-39c0-58 43-104 100-104s100 46 100 104v39" fill="none" stroke="#b5e2c8" stroke-width="36" stroke-linecap="round"/>
-  <rect x="112" y="213" width="288" height="223" rx="48" fill="#39a875"/>
-  <circle cx="256" cy="312" r="31" fill="#14251e"/>
-  <path d="M256 336v43" stroke="#14251e" stroke-width="25" stroke-linecap="round"/>
+  <defs>
+    <linearGradient id="bg" x1="70" y1="50" x2="448" y2="472" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#171722"/>
+      <stop offset="1" stop-color="#080810"/>
+    </linearGradient>
+    <linearGradient id="violet" x1="152" y1="116" x2="374" y2="418" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#A78BFA"/>
+      <stop offset=".48" stop-color="#8B5CF6"/>
+      <stop offset="1" stop-color="#6D28D9"/>
+    </linearGradient>
+    <filter id="glow" x="80" y="72" width="352" height="384" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="20"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="url(#bg)"/>
+  <rect x="1" y="1" width="510" height="510" rx="115" fill="none" stroke="#FFFFFF" stroke-opacity=".08" stroke-width="2"/>
+  <path d="M156 224v-36c0-58 44-104 100-104s100 46 100 104v36" fill="none" stroke="#7C3AED" stroke-opacity=".28" stroke-width="42" stroke-linecap="round" filter="url(#glow)"/>
+  <path d="M160 224v-34c0-56 42-100 96-100s96 44 96 100v34" fill="none" stroke="url(#violet)" stroke-width="34" stroke-linecap="round"/>
+  <rect x="112" y="208" width="288" height="228" rx="52" fill="#12121B" stroke="#A78BFA" stroke-opacity=".32" stroke-width="3"/>
+  <rect x="129" y="225" width="254" height="194" rx="37" fill="url(#violet)" fill-opacity=".13" stroke="#FFFFFF" stroke-opacity=".06" stroke-width="2"/>
+  <circle cx="256" cy="309" r="32" fill="url(#violet)"/>
+  <path d="M256 335v48" stroke="#A78BFA" stroke-width="24" stroke-linecap="round"/>
+  <circle cx="256" cy="308" r="12" fill="#F7F8FF"/>
 </svg>

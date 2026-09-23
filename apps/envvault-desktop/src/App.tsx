@@ -1,33 +1,42 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { Icon } from "./Icons";
+import {
+  createTranslator,
+  dateLocale,
+  loadLocale,
+  saveLocale,
+  type Locale,
+  type MessageKey,
+} from "./i18n";
 
-type Project = { id: string; name: string; root: string; included: string[] };
-type Backup = {
+export type Project = { id: string; name: string; root: string; included: string[] };
+export type Backup = {
   id: string;
   project_id: string;
   project_name: string;
   created_at: string;
   file_count: number;
 };
-type Scanned = {
+export type Scanned = {
   relative_path: string;
   size: number;
   modified?: string;
   selected_by_default: boolean;
 };
-type Dashboard = {
+export type Dashboard = {
   initialized: boolean;
   projects: Project[];
   backups: Backup[];
   remote_configured: boolean;
 };
-type Verify = {
+export type Verify = {
   status: string;
   backups_checked: number;
   blobs_checked: number;
   failures: number;
 };
-type RestorePlan = {
+export type RestorePlan = {
   project_name: string;
   backup_id: string;
   destination: string;
@@ -36,6 +45,9 @@ type RestorePlan = {
   restoring_to_original: boolean;
 };
 
+export type CommandBridge = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
+export type Tab = "home" | "projects" | "add" | "history" | "restore" | "settings";
+
 const empty: Dashboard = {
   initialized: false,
   projects: [],
@@ -43,11 +55,68 @@ const empty: Dashboard = {
   remote_configured: false,
 };
 
-export default function App() {
+const navItems: Array<{ id: Exclude<Tab, "restore">; icon: Parameters<typeof Icon>[0]["name"]; label: MessageKey }> = [
+  { id: "home", icon: "home", label: "navOverview" },
+  { id: "projects", icon: "projects", label: "navProjects" },
+  { id: "add", icon: "plus", label: "navAddProject" },
+  { id: "history", icon: "history", label: "navHistory" },
+  { id: "settings", icon: "settings", label: "navSettings" },
+];
+
+const tabLabels: Record<Tab, MessageKey> = {
+  home: "navOverview",
+  projects: "navProjects",
+  add: "navAddProject",
+  history: "navHistory",
+  restore: "navRestore",
+  settings: "navSettings",
+};
+
+const verifyLabels: Record<string, MessageKey> = {
+  healthy: "statusHealthy",
+  incomplete: "statusIncomplete",
+  corrupt: "statusCorrupt",
+  wrong_key: "statusWrongKey",
+};
+
+function EmptyState({
+  icon,
+  title,
+  body,
+  action,
+  onAction,
+}: {
+  icon: Parameters<typeof Icon>[0]["name"];
+  title: string;
+  body: string;
+  action: string;
+  onAction: () => void;
+}) {
+  return (
+    <div className="empty-state">
+      <span className="empty-icon"><Icon name={icon} /></span>
+      <h3>{title}</h3>
+      <p>{body}</p>
+      <button type="button" onClick={onAction}>{action}</button>
+    </div>
+  );
+}
+
+export default function App({
+  command = invoke as CommandBridge,
+  initialTab = "home",
+}: {
+  command?: CommandBridge;
+  initialTab?: Tab;
+}) {
+  const [locale, setLocale] = useState<Locale>(() => loadLocale(window.localStorage));
+  const t = useMemo(() => createTranslator(locale), [locale]);
   const [data, setData] = useState<Dashboard>(empty);
-  const [tab, setTab] = useState("home");
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [busy, setBusy] = useState(true);
-  const [notice, setNotice] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const [notice, setNotice] = useState<{ kind: "success" | "error"; text: string } | null>(null);
+  const [fieldError, setFieldError] = useState("");
   const [path, setPath] = useState("");
   const [name, setName] = useState("");
   const [found, setFound] = useState<Scanned[]>([]);
@@ -69,106 +138,135 @@ export default function App() {
   const [remotePrivateKey, setRemotePrivateKey] = useState("");
   const [remoteHostKey, setRemoteHostKey] = useState("");
 
+  useEffect(() => {
+    document.documentElement.lang = locale;
+    document.title = t("productName");
+  }, [locale, t]);
+
   const refresh = useCallback(async () => {
     try {
-      setData(await invoke<Dashboard>("dashboard"));
+      setData(await command<Dashboard>("dashboard"));
+      setNotice((current) => current?.kind === "error" ? null : current);
     } catch {
-      setNotice("The vault status could not be loaded.");
+      setNotice({ kind: "error", text: t("errorLoad") });
     } finally {
       setBusy(false);
+      setLoaded(true);
     }
-  }, []);
+  }, [command, t]);
 
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+  useEffect(() => { void refresh(); }, [refresh]);
 
-  async function action(work: () => Promise<unknown>, success: string) {
+  function chooseLocale(next: Locale) {
+    saveLocale(next, window.localStorage);
+    setLocale(next);
+  }
+
+  async function action(work: () => Promise<unknown>, successKey: MessageKey, errorKey: MessageKey) {
     setBusy(true);
-    setNotice("");
+    setNotice(null);
     try {
       await work();
-      setNotice(success);
+      setNotice({ kind: "success", text: t(successKey) });
       await refresh();
-    } catch (error) {
-      setNotice(String(error));
+    } catch {
+      setNotice({ kind: "error", text: t(errorKey) });
     } finally {
       setBusy(false);
     }
   }
 
   async function scanPath() {
+    if (!path.trim()) {
+      setFieldError(t("fieldProjectPath"));
+      return;
+    }
     setBusy(true);
-    setNotice("");
+    setFieldError("");
+    setNotice(null);
     try {
-      const result = await invoke<Scanned[]>("scan_project", { path });
+      const result = await command<Scanned[]>("scan_project", { path });
       setFound(result);
-      setSelected(
-        result
-          .filter((file) => file.selected_by_default)
-          .map((file) => file.relative_path),
-      );
-      if (!name)
-        setName(path.split(/[\\/]/).filter(Boolean).at(-1) ?? "Project");
-    } catch (error) {
-      setNotice(String(error));
+      setSelected(result.filter((file) => file.selected_by_default).map((file) => file.relative_path));
+      if (!name) setName(path.split(/[\\/]/).filter(Boolean).at(-1) ?? t("projectName"));
+    } catch {
+      setNotice({ kind: "error", text: t("errorScan") });
     } finally {
       setBusy(false);
     }
   }
 
-  function beginRestore(backup: Backup) {
-    const source = data.projects.find(
-      (project) => project.id === backup.project_id,
+  function addProject() {
+    if (!name.trim() || selected.length === 0) {
+      setFieldError(t("fieldProjectSelection"));
+      return;
+    }
+    setFieldError("");
+    void action(
+      () => command("add_project", { name, path, selected }),
+      "successProject",
+      "errorProject",
     );
+  }
+
+  function beginRestore(backup: Backup) {
+    const source = data.projects.find((project) => project.id === backup.project_id);
     setRestoreProject(backup.project_id);
     setRestoreBackup(backup.id);
     setRestoreDestination(source?.root ?? "");
     setRestorePlan(null);
     setOverwrite(false);
     setConfirmed(false);
+    setFieldError("");
     setTab("restore");
   }
 
   async function previewRestore() {
+    if (!restoreDestination.trim()) {
+      setFieldError(t("fieldRestoreDestination"));
+      return;
+    }
     setBusy(true);
-    setNotice("");
+    setFieldError("");
+    setNotice(null);
     try {
-      setRestorePlan(
-        await invoke<RestorePlan>("plan_restore", {
-          projectId: restoreProject,
-          backupId: restoreBackup,
-          destination: restoreDestination,
-        }),
-      );
-    } catch (error) {
-      setNotice(String(error));
+      setRestorePlan(await command<RestorePlan>("plan_restore", {
+        projectId: restoreProject,
+        backupId: restoreBackup,
+        destination: restoreDestination,
+      }));
+    } catch {
+      setNotice({ kind: "error", text: t("errorRestorePreview") });
     } finally {
       setBusy(false);
     }
   }
 
   async function recoveryAction(mode: "export" | "import") {
+    const valid = recoveryPath.trim() && recoveryPassphrase.length >= 12;
+    const exportValid = mode === "import" || recoveryPassphrase === recoveryConfirmation;
+    if (!valid || !exportValid) {
+      setFieldError(t(mode === "export" ? "fieldRecoveryConfirmation" : "fieldRecovery"));
+      return;
+    }
     setBusy(true);
-    setNotice("");
+    setFieldError("");
+    setNotice(null);
     try {
       if (mode === "export") {
-        await invoke("export_recovery", {
+        await command("export_recovery", {
           path: recoveryPath,
           passphrase: recoveryPassphrase,
           passphraseConfirmation: recoveryConfirmation,
         });
-        setNotice("Encrypted recovery file created. Store it separately from the vault.");
+        setNotice({ kind: "success", text: t("successRecoveryExport") });
       } else {
-        await invoke("import_recovery", {
-          path: recoveryPath,
-          passphrase: recoveryPassphrase,
-        });
-        setNotice("Recovery identity imported into the system keyring.");
+        await command("import_recovery", { path: recoveryPath, passphrase: recoveryPassphrase });
+        setNotice({ kind: "success", text: t("successRecoveryImport") });
       }
       await refresh();
-    } catch (error) {
-      setNotice(String(error));
+    } catch {
+      setNotice({ kind: "error", text: t(mode === "export" ? "errorRecoveryExport" : "errorRecoveryImport") });
     } finally {
       setRecoveryPassphrase("");
       setRecoveryConfirmation("");
@@ -176,549 +274,219 @@ export default function App() {
     }
   }
 
-  async function configureRemote() {
-    await action(
-      () =>
-        invoke("configure_remote", {
-          host: remoteHost,
-          port: Number(remotePort),
-          username: remoteUsername,
-          remotePath,
-          privateKey: remotePrivateKey,
-          hostKeySha256: remoteHostKey,
-        }),
-      "Remote storage configured with strict host-key verification.",
+  function configureRemote() {
+    const complete = remoteHost && remotePort && remoteUsername && remotePath && remotePrivateKey && remoteHostKey.startsWith("SHA256:");
+    if (!complete) {
+      setFieldError(t("fieldRemote"));
+      return;
+    }
+    setFieldError("");
+    void action(
+      () => command("configure_remote", {
+        host: remoteHost,
+        port: Number(remotePort),
+        username: remoteUsername,
+        remotePath,
+        privateKey: remotePrivateKey,
+        hostKeySha256: remoteHostKey,
+      }),
+      "successRemote",
+      "errorRemote",
     );
   }
 
-  if (busy && !data.initialized)
+  if (!loaded) {
     return (
-      <main className="center">
+      <main className="center loading-screen" aria-live="polite">
+        <div className="brand-orbit"><span>{t("brandMonogram")}</span></div>
         <div className="spinner" />
-        <p>Opening EnvVault…</p>
+        <p>{t("loadingApp")}</p>
       </main>
     );
+  }
 
-  if (!data.initialized)
+  if (!data.initialized) {
     return (
       <main className="onboarding">
-        <div className="mark">EV</div>
-        <h1>Your environment files, under your control.</h1>
-        <p>
-          EnvVault encrypts selected .env files locally before they enter the
-          vault. The private identity stays in your system keyring.
-        </p>
-        <button
-          onClick={() =>
-            void action(
-              () => invoke("init_vault"),
-              "Vault created. Export an encrypted recovery file from Settings.",
-            )
-          }
-        >
-          Create local vault
-        </button>
-        {notice && <div className="notice" aria-live="polite">{notice}</div>}
+        <div className="onboarding-card">
+          <div className="brand-lockup">
+            <span className="aq-mark">{t("brandMonogram")}</span>
+            <span><strong>{t("productName")}</strong><small>{t("brandSignature")}</small></span>
+          </div>
+          <span className="onboarding-icon"><Icon name="shield" /></span>
+          <p className="eyebrow">{t("eyebrow")}</p>
+          <h1>{t("onboardingTitle")}</h1>
+          <p className="lede">{t("onboardingBody")}</p>
+          <button type="button" disabled={busy} onClick={() => notice?.kind === "error" ? void refresh() : void action(() => command("init_vault"), "successInitialized", "errorInitialize")}>
+            {t(notice?.kind === "error" ? "refresh" : "onboardingAction")}
+          </button>
+          {notice && <div className={`notice ${notice.kind}`} role={notice.kind === "error" ? "alert" : "status"}>{notice.text}</div>}
+        </div>
       </main>
     );
+  }
 
   const latest = data.backups[0];
+  const verificationLabel = verification ? t(verifyLabels[verification.status] ?? "statusNotChecked") : t("statusNotChecked");
+  const fieldErrorNode = fieldError ? <p className="field-error" role="alert">{fieldError}</p> : null;
+
   return (
     <div className="shell">
-      <aside>
-        <div className="brand">
-          <span>EV</span>
-          <strong>EnvVault</strong>
+      <aside className="sidebar">
+        <div className="brand-lockup sidebar-brand">
+          <span className="aq-mark">{t("brandMonogram")}</span>
+          <span><strong>{t("productName")}</strong><small>{t("brandSignature")}</small></span>
         </div>
-        <nav>
-          {[
-            ["home", "Overview"],
-            ["projects", "Projects"],
-            ["add", "Add project"],
-            ["history", "History"],
-            ["settings", "Settings"],
-          ].map(([id, label]) => (
-            <button
-              key={id}
-              className={tab === id ? "active" : ""}
-              onClick={() => setTab(id)}
-            >
-              {label}
+        <nav aria-label={t("productName")}>
+          {navItems.map((item) => (
+            <button key={item.id} type="button" className={tab === item.id ? "active" : ""} aria-current={tab === item.id ? "page" : undefined} onClick={() => { setTab(item.id); setFieldError(""); }}>
+              <Icon name={item.icon} /><span>{t(item.label)}</span>
             </button>
           ))}
         </nav>
-        <div className="privacy">
-          <i />
-          Local-first
-          <br />
-          <small>No secret values displayed</small>
+        <div className="privacy-card">
+          <span className="status-dot" />
+          <div><strong>{t("privacyTitle")}</strong><small>{t("privacyBody")}</small></div>
         </div>
       </aside>
+
       <main className="content">
-        <header>
-          <div>
-            <p className="eyebrow">LOCAL ENCRYPTED VAULT</p>
-            <h1>
-              {tab === "home"
-                ? "Overview"
-                : tab[0].toUpperCase() + tab.slice(1)}
-            </h1>
+        <header className="topbar">
+          <div><p className="eyebrow">{t("eyebrow")}</p><h1>{t(tabLabels[tab])}</h1></div>
+          <div className="header-actions">
+            {busy && <span className="busy-label"><span className="mini-spinner" />{t("activity")}</span>}
+            <button type="button" className="secondary compact" disabled={busy} onClick={() => void refresh()}><Icon name="refresh" />{t("refresh")}</button>
           </div>
-          <button className="secondary" onClick={() => void refresh()}>
-            Refresh
-          </button>
         </header>
-        {notice && <div className="notice" aria-live="polite">{notice}</div>}
+
+        {notice && <div className={`notice ${notice.kind}`} role={notice.kind === "error" ? "alert" : "status"}>{notice.text}</div>}
+
         {tab === "home" && (
           <>
             <section className="hero">
               <div>
-                <span className="healthy">● Vault ready</span>
-                <h2>
-                  {data.projects.length} protected project
-                  {data.projects.length === 1 ? "" : "s"}
-                </h2>
-                <p>
-                  {latest
-                    ? `Last backup ${new Date(latest.created_at).toLocaleString()}`
-                    : "No backup yet. Add a project to begin."}
-                </p>
+                <span className="healthy"><Icon name="check" />{t("vaultReady")}</span>
+                <h2>{t("protectedProjects", data.projects.length)}</h2>
+                <p>{latest ? t("lastBackup", new Date(latest.created_at).toLocaleString(dateLocale(locale))) : t("noBackupSummary")}</p>
               </div>
-              <button onClick={() => setTab("add")}>Add project</button>
+              <button type="button" onClick={() => setTab("add")}><Icon name="plus" />{t("addProject")}</button>
             </section>
             <div className="stats">
-              <article>
-                <small>BACKUPS</small>
-                <strong>{data.backups.length}</strong>
-                <span>Immutable versions</span>
-              </article>
-              <article>
-                <small>SYNC</small>
-                <strong>{data.remote_configured ? "Ready" : "Local"}</strong>
-                <span>
-                  {data.remote_configured
-                    ? "SFTP configured"
-                    : "No remote configured"}
-                </span>
-              </article>
-              <article>
-                <small>INTEGRITY</small>
-                <strong>{verification?.status ?? "Not checked"}</strong>
-                <button
-                  className="link"
-                  onClick={() =>
-                    void action(
-                      async () =>
-                        setVerification(await invoke<Verify>("verify_vault")),
-                      "Verification complete.",
-                    )
-                  }
-                >
-                  Verify now
-                </button>
-              </article>
+              <article><span className="stat-icon"><Icon name="archive" /></span><small>{t("statBackups")}</small><strong>{data.backups.length}</strong><p>{t("statVersions")}</p></article>
+              <article><span className="stat-icon"><Icon name="server" /></span><small>{t("statSync")}</small><strong>{t(data.remote_configured ? "statReady" : "statLocal")}</strong><p>{t(data.remote_configured ? "statRemoteConfigured" : "statNoRemote")}</p></article>
+              <article><span className="stat-icon"><Icon name="shield" /></span><small>{t("statIntegrity")}</small><strong>{verificationLabel}</strong><button type="button" className="link" disabled={busy} onClick={() => void action(async () => setVerification(await command<Verify>("verify_vault")), "successVerify", "errorVerify")}>{t("verifyNow")}</button></article>
             </div>
           </>
         )}
+
         {tab === "projects" && (
           <section className="panel">
-            <h2>Projects</h2>
+            <div className="section-heading"><div><p className="eyebrow">{t("eyebrow")}</p><h2>{t("projectsTitle")}</h2></div></div>
             {data.projects.length === 0 ? (
-              <p className="muted">No projects configured.</p>
-            ) : (
-              data.projects.map((project) => (
-                <div className="row" key={project.id}>
-                  <div>
-                    <strong>{project.name}</strong>
-                    <small>
-                      {project.root} · {project.included.length} file(s)
-                    </small>
-                  </div>
-                  <button
-                    disabled={busy}
-                    onClick={() =>
-                      void action(
-                        () =>
-                          invoke("backup_project", { projectId: project.id }),
-                        "Encrypted backup created.",
-                      )
-                    }
-                  >
-                    Back up
-                  </button>
-                </div>
-              ))
-            )}
-          </section>
-        )}
-        {tab === "add" && (
-          <section className="panel form">
-            <h2>Add a project</h2>
-            <p className="muted">
-              Only detected .env files you confirm will be selected.
-            </p>
-            <label>
-              Project folder
-              <input
-                value={path}
-                onChange={(e) => setPath(e.target.value)}
-                placeholder="/path/to/project"
-              />
-            </label>
-            <button
-              className="secondary"
-              disabled={!path || busy}
-              onClick={() => void scanPath()}
-            >
-              Scan folder
-            </button>
-            {found.length > 0 && (
-              <>
-                <label>
-                  Project name
-                  <input
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                  />
-                </label>
-                <div className="files">
-                  {found.map((file) => (
-                    <label key={file.relative_path}>
-                      <input
-                        type="checkbox"
-                        checked={selected.includes(file.relative_path)}
-                        onChange={(e) =>
-                          setSelected(
-                            e.target.checked
-                              ? [...selected, file.relative_path]
-                              : selected.filter(
-                                  (p) => p !== file.relative_path,
-                                ),
-                          )
-                        }
-                      />
-                      <span>
-                        <strong>{file.relative_path}</strong>
-                        <small>
-                          {file.size} bytes ·{" "}
-                          {file.selected_by_default
-                            ? "candidate"
-                            : "template, off by default"}
-                        </small>
-                      </span>
-                    </label>
-                  ))}
-                </div>
-                <button
-                  disabled={!name || selected.length === 0 || busy}
-                  onClick={() =>
-                    void action(
-                      () => invoke("add_project", { name, path, selected }),
-                      "Project added. No backup has been created yet.",
-                    )
-                  }
-                >
-                  Confirm selection
-                </button>
-              </>
-            )}
-          </section>
-        )}
-        {tab === "history" && (
-          <section className="panel">
-            <h2>Backup history</h2>
-            {data.backups.map((backup) => (
-              <div className="row" key={backup.id}>
-                <div>
-                  <strong>{backup.project_name}</strong>
-                  <small>
-                    {new Date(backup.created_at).toLocaleString()} ·{" "}
-                    {backup.file_count} file(s)
-                  </small>
-                </div>
-                <div className="row-actions">
-                  <code>{backup.id.slice(0, 10)}…</code>
-                  <button
-                    className="secondary"
-                    onClick={() => beginRestore(backup)}
-                  >
-                    Restore
-                  </button>
-                </div>
+              <EmptyState icon="projects" title={t("projectsEmptyTitle")} body={t("projectsEmptyBody")} action={t("addProject")} onAction={() => setTab("add")} />
+            ) : data.projects.map((project) => (
+              <div className="row" key={project.id}>
+                <div><strong>{project.name}</strong><small><code>{project.root}</code><span className="separator">·</span>{t("filesCount", project.included.length)}</small></div>
+                <button type="button" disabled={busy} onClick={() => void action(() => command("backup_project", { projectId: project.id }), "successBackup", "errorBackup")}><Icon name="archive" />{t("createBackup")}</button>
               </div>
             ))}
           </section>
         )}
-        {tab === "restore" && (
+
+        {tab === "add" && (
           <section className="panel form">
-            <h2>Restore backup</h2>
-            <p className="muted">
-              EnvVault previews paths only. It never displays or executes
-              restored values.
-            </p>
-            <label>
-              Destination folder
-              <input
-                value={restoreDestination}
-                onChange={(e) => {
-                  setRestoreDestination(e.target.value);
-                  setRestorePlan(null);
-                }}
-              />
-            </label>
-            <button
-              className="secondary"
-              disabled={!restoreDestination || busy}
-              onClick={() => void previewRestore()}
-            >
-              Preview restore
-            </button>
-            {restorePlan && (
-              <>
+            <div className="section-heading"><div><h2>{t("addProjectTitle")}</h2><p>{t("addProjectHelp")}</p></div></div>
+            <div className="form-row action-field">
+              <label htmlFor="project-path">{t("projectFolder")}</label>
+              <div><input id="project-path" value={path} onChange={(event) => { setPath(event.target.value); setFieldError(""); }} placeholder={t("projectFolderExample")} spellCheck={false} /><button type="button" className="secondary" disabled={busy} onClick={() => void scanPath()}>{t("scanFolder")}</button></div>
+              {found.length === 0 && fieldErrorNode}
+            </div>
+            {found.length > 0 && (
+              <div className="selection-card">
+                <label htmlFor="project-name">{t("projectName")}</label>
+                <input id="project-name" value={name} onChange={(event) => { setName(event.target.value); setFieldError(""); }} placeholder={t("projectNameExample")} />
+                <div className="selection-heading"><div><h3>{t("detectedFiles")}</h3><p>{t("detectedFilesHelp")}</p></div><span>{t("filesCount", selected.length)}</span></div>
                 <div className="files">
-                  {restorePlan.paths.map((path) => (
-                    <div className="restore-file" key={path}>
-                      <span>{path}</span>
-                      {restorePlan.collisions.includes(path) && (
-                        <strong>Existing file</strong>
-                      )}
-                    </div>
+                  {found.map((file) => (
+                    <label className="file-choice" key={file.relative_path}>
+                      <input type="checkbox" checked={selected.includes(file.relative_path)} onChange={(event) => { setFieldError(""); setSelected(event.target.checked ? [...selected, file.relative_path] : selected.filter((item) => item !== file.relative_path)); }} />
+                      <span><strong>{file.relative_path}</strong><small>{t("bytesCount", file.size)} · {t(file.selected_by_default ? "candidateFile" : "templateFile")}</small></span>
+                    </label>
                   ))}
                 </div>
-                {restorePlan.collisions.length > 0 && (
-                  <label className="check">
-                    <input
-                      type="checkbox"
-                      checked={overwrite}
-                      onChange={(e) => setOverwrite(e.target.checked)}
-                    />{" "}
-                    Replace the listed existing files
-                  </label>
-                )}
-                <label className="check">
-                  <input
-                    type="checkbox"
-                    checked={confirmed}
-                    onChange={(e) => setConfirmed(e.target.checked)}
-                  />{" "}
-                  I reviewed every path
-                  {restorePlan.restoring_to_original
-                    ? " and confirm restoration into the original project"
-                    : ""}
-                </label>
-                <button
-                  disabled={
-                    !confirmed ||
-                    (restorePlan.collisions.length > 0 && !overwrite) ||
-                    busy
-                  }
-                  onClick={() =>
-                    void action(
-                      () =>
-                        invoke("execute_restore", {
-                          projectId: restoreProject,
-                          backupId: restoreBackup,
-                          destination: restoreDestination,
-                          overwrite,
-                          confirmed,
-                        }),
-                      "Restore completed with restrictive file permissions.",
-                    )
-                  }
-                >
-                  Restore encrypted backup
-                </button>
-              </>
+                {fieldErrorNode}
+                <button type="button" disabled={busy} onClick={addProject}>{t("confirmProjectSelection")}</button>
+              </div>
             )}
           </section>
         )}
+
+        {tab === "history" && (
+          <section className="panel">
+            <div className="section-heading"><div><h2>{t("historyTitle")}</h2></div></div>
+            {data.backups.length === 0 ? (
+              <EmptyState icon="history" title={t("historyEmptyTitle")} body={t("historyEmptyBody")} action={t("historyEmptyAction")} onAction={() => setTab("projects")} />
+            ) : data.backups.map((backup) => (
+              <div className="row" key={backup.id}>
+                <div><strong>{backup.project_name}</strong><small>{new Date(backup.created_at).toLocaleString(dateLocale(locale))}<span className="separator">·</span>{t("filesCount", backup.file_count)}</small></div>
+                <div className="row-actions"><code>{backup.id.slice(0, 10)}…</code><button type="button" className="secondary" onClick={() => beginRestore(backup)}>{t("restoreVersion")}</button></div>
+              </div>
+            ))}
+          </section>
+        )}
+
+        {tab === "restore" && (
+          <section className="panel form">
+            <div className="section-heading"><div><h2>{t("restoreTitle")}</h2><p>{t("restoreHelp")}</p></div></div>
+            <div className="form-row action-field">
+              <label htmlFor="restore-destination">{t("destinationFolder")}</label>
+              <div><input id="restore-destination" value={restoreDestination} onChange={(event) => { setRestoreDestination(event.target.value); setRestorePlan(null); setFieldError(""); }} placeholder={t("destinationExample")} spellCheck={false} /><button type="button" className="secondary" disabled={busy} onClick={() => void previewRestore()}>{t("previewRestore")}</button></div>
+              {!restorePlan && fieldErrorNode}
+            </div>
+            {restorePlan && (
+              <div className="confirmation-card">
+                <div className="selection-heading"><div><h3>{t("restoreFilesTitle")}</h3><p><code>{restorePlan.destination}</code></p></div><span>{t("filesCount", restorePlan.paths.length)}</span></div>
+                <div className="files restore-files">
+                  {restorePlan.paths.map((item) => <div className="restore-file" key={item}><code>{item}</code>{restorePlan.collisions.includes(item) && <strong>{t("existingFile")}</strong>}</div>)}
+                </div>
+                {restorePlan.collisions.length > 0 && <label className="check"><input type="checkbox" checked={overwrite} onChange={(event) => setOverwrite(event.target.checked)} /><span>{t("replaceFiles")}</span></label>}
+                <label className="check"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>{t(restorePlan.restoring_to_original ? "confirmOriginalPaths" : "confirmPaths")}</span></label>
+                <button type="button" disabled={!confirmed || (restorePlan.collisions.length > 0 && !overwrite) || busy} onClick={() => void action(() => command("execute_restore", { projectId: restoreProject, backupId: restoreBackup, destination: restoreDestination, overwrite, confirmed }), "successRestore", "errorRestore")}>{t(restorePlan.collisions.length > 0 ? "restoreAndReplace" : "restoreBackup")}</button>
+              </div>
+            )}
+          </section>
+        )}
+
         {tab === "settings" && (
           <section className="panel settings-panel">
-            <h2>Security & recovery</h2>
-            <div className="setting">
-              <strong>Private identity</strong>
-              <span>Stored in the operating-system keyring</span>
+            <div className="section-heading"><div><h2>{t("settingsTitle")}</h2></div></div>
+            <div className="setting language-setting">
+              <div><span className="setting-icon"><Icon name="globe" /></span><span><strong>{t("languageTitle")}</strong><small>{t("languageHelp")}</small></span></div>
+              <div className="language-switch" role="group" aria-label={t("languageTitle")}><button type="button" className={locale === "fr" ? "active" : ""} aria-pressed={locale === "fr"} onClick={() => chooseLocale("fr")}>{t("languageFrench")}</button><button type="button" className={locale === "en" ? "active" : ""} aria-pressed={locale === "en"} onClick={() => chooseLocale("en")}>{t("languageEnglish")}</button></div>
             </div>
+            <div className="setting"><div><span className="setting-icon"><Icon name="key" /></span><span><strong>{t("privateIdentity")}</strong><small>{t("privateIdentityBody")}</small></span></div></div>
+
             <div className="settings-section">
-              <div>
-                <h3>Recovery file</h3>
-                <p className="muted">
-                  The passphrase is sent only to the local Rust process and is
-                  cleared from this form after every attempt.
-                </p>
-              </div>
+              <div><h3>{t("recoveryTitle")}</h3><p>{t("recoveryHelp")}</p></div>
               <div className="settings-form">
-                <label>
-                  Recovery file path
-                  <input
-                    value={recoveryPath}
-                    onChange={(event) => setRecoveryPath(event.target.value)}
-                    placeholder="/separate/media/envvault-recovery.age"
-                    spellCheck={false}
-                  />
-                </label>
-                <div className="settings-grid">
-                  <label>
-                    Passphrase
-                    <input
-                      type="password"
-                      value={recoveryPassphrase}
-                      onChange={(event) =>
-                        setRecoveryPassphrase(event.target.value)
-                      }
-                      autoComplete="new-password"
-                    />
-                  </label>
-                  <label>
-                    Confirm for export
-                    <input
-                      type="password"
-                      value={recoveryConfirmation}
-                      onChange={(event) =>
-                        setRecoveryConfirmation(event.target.value)
-                      }
-                      autoComplete="new-password"
-                    />
-                  </label>
-                </div>
-                <div className="button-row">
-                  <button
-                    disabled={!recoveryPath || !recoveryPassphrase || busy}
-                    onClick={() => void recoveryAction("import")}
-                    className="secondary"
-                  >
-                    Import identity
-                  </button>
-                  <button
-                    disabled={
-                      !recoveryPath ||
-                      !recoveryPassphrase ||
-                      !recoveryConfirmation ||
-                      busy
-                    }
-                    onClick={() => void recoveryAction("export")}
-                  >
-                    Export encrypted recovery
-                  </button>
-                </div>
+                <label htmlFor="recovery-path">{t("recoveryPath")}</label><input id="recovery-path" value={recoveryPath} onChange={(event) => { setRecoveryPath(event.target.value); setFieldError(""); }} placeholder={t("recoveryPathExample")} spellCheck={false} />
+                <div className="settings-grid"><div><label htmlFor="passphrase">{t("passphrase")}</label><input id="passphrase" type="password" value={recoveryPassphrase} onChange={(event) => { setRecoveryPassphrase(event.target.value); setFieldError(""); }} autoComplete="new-password" /><small>{t("passphraseHelp")}</small></div><div><label htmlFor="passphrase-confirm">{t("confirmPassphrase")}</label><input id="passphrase-confirm" type="password" value={recoveryConfirmation} onChange={(event) => { setRecoveryConfirmation(event.target.value); setFieldError(""); }} autoComplete="new-password" /></div></div>
+                {fieldErrorNode}
+                <div className="button-row"><button type="button" disabled={busy} onClick={() => void recoveryAction("import")} className="secondary">{t("importRecovery")}</button><button type="button" disabled={busy} onClick={() => void recoveryAction("export")}>{t("exportRecovery")}</button></div>
               </div>
             </div>
+
             <div className="settings-section">
-              <div>
-                <h3>SFTP storage</h3>
-                <p className="muted">
-                  Only encrypted objects are transferred. Unknown or changed
-                  host keys are rejected.
-                </p>
-              </div>
+              <div><h3>{t("remoteTitle")}</h3><p>{t("remoteHelp")}</p></div>
               <div className="settings-form">
-                <div className="settings-grid remote-grid">
-                  <label>
-                    Host
-                    <input
-                      value={remoteHost}
-                      onChange={(event) => setRemoteHost(event.target.value)}
-                      placeholder="backup.example.test"
-                      spellCheck={false}
-                    />
-                  </label>
-                  <label>
-                    Port
-                    <input
-                      type="number"
-                      min="1"
-                      max="65535"
-                      value={remotePort}
-                      onChange={(event) => setRemotePort(event.target.value)}
-                    />
-                  </label>
-                  <label>
-                    Username
-                    <input
-                      value={remoteUsername}
-                      onChange={(event) =>
-                        setRemoteUsername(event.target.value)
-                      }
-                      spellCheck={false}
-                    />
-                  </label>
-                  <label>
-                    Remote folder
-                    <input
-                      value={remotePath}
-                      onChange={(event) => setRemotePath(event.target.value)}
-                      placeholder="/srv/envvault"
-                      spellCheck={false}
-                    />
-                  </label>
-                </div>
-                <label>
-                  Dedicated SSH private-key path
-                  <input
-                    value={remotePrivateKey}
-                    onChange={(event) =>
-                      setRemotePrivateKey(event.target.value)
-                    }
-                    placeholder="/path/to/dedicated_ed25519"
-                    spellCheck={false}
-                  />
-                </label>
-                <label>
-                  Trusted host-key fingerprint
-                  <input
-                    value={remoteHostKey}
-                    onChange={(event) => setRemoteHostKey(event.target.value)}
-                    placeholder="SHA256:verified-out-of-band"
-                    spellCheck={false}
-                  />
-                </label>
-                <div className="button-row">
-                  <button
-                    className="secondary"
-                    disabled={!data.remote_configured || busy}
-                    onClick={() =>
-                      void action(
-                        () => invoke("sync_remote", { direction: "pull" }),
-                        "Encrypted pull completed.",
-                      )
-                    }
-                  >
-                    Pull encrypted objects
-                  </button>
-                  <button
-                    className="secondary"
-                    disabled={!data.remote_configured || busy}
-                    onClick={() =>
-                      void action(
-                        () => invoke("sync_remote", { direction: "push" }),
-                        "Encrypted push completed.",
-                      )
-                    }
-                  >
-                    Push encrypted objects
-                  </button>
-                  <button
-                    disabled={
-                      !remoteHost ||
-                      !remotePort ||
-                      !remoteUsername ||
-                      !remotePath ||
-                      !remotePrivateKey ||
-                      !remoteHostKey ||
-                      busy
-                    }
-                    onClick={() => void configureRemote()}
-                  >
-                    Save SFTP configuration
-                  </button>
-                </div>
+                <div className="settings-grid remote-grid"><div><label htmlFor="remote-host">{t("remoteHost")}</label><input id="remote-host" value={remoteHost} onChange={(event) => { setRemoteHost(event.target.value); setFieldError(""); }} placeholder={t("remoteHostExample")} spellCheck={false} /></div><div><label htmlFor="remote-port">{t("remotePort")}</label><input id="remote-port" type="number" min="1" max="65535" value={remotePort} onChange={(event) => setRemotePort(event.target.value)} /></div><div><label htmlFor="remote-user">{t("remoteUsername")}</label><input id="remote-user" value={remoteUsername} onChange={(event) => setRemoteUsername(event.target.value)} placeholder={t("remoteUsernameExample")} spellCheck={false} /></div><div><label htmlFor="remote-folder">{t("remoteFolder")}</label><input id="remote-folder" value={remotePath} onChange={(event) => setRemotePath(event.target.value)} placeholder={t("remoteFolderExample")} spellCheck={false} /></div></div>
+                <label htmlFor="private-key">{t("privateKeyPath")}</label><input id="private-key" value={remotePrivateKey} onChange={(event) => setRemotePrivateKey(event.target.value)} placeholder={t("privateKeyPathExample")} spellCheck={false} />
+                <label htmlFor="fingerprint">{t("hostFingerprint")}</label><input id="fingerprint" value={remoteHostKey} onChange={(event) => { setRemoteHostKey(event.target.value); setFieldError(""); }} placeholder={t("hostFingerprintExample")} spellCheck={false} />
+                {fieldErrorNode}
+                <div className="button-row"><button type="button" className="secondary" disabled={!data.remote_configured || busy} onClick={() => void action(() => command("sync_remote", { direction: "pull" }), "successPull", "errorPull")}>{t("syncPull")}</button><button type="button" className="secondary" disabled={!data.remote_configured || busy} onClick={() => void action(() => command("sync_remote", { direction: "push" }), "successPush", "errorPush")}>{t("syncPush")}</button><button type="button" disabled={busy} onClick={configureRemote}>{t("saveRemote")}</button></div>
               </div>
             </div>
-            <div className="warning">
-              EnvVault protects a stolen vault or VPS copy. It cannot protect
-              secrets while this computer is fully compromised and the vault is
-              unlocked.
-            </div>
+            <div className="warning"><Icon name="shield" /><p>{t("securityWarning")}</p></div>
           </section>
         )}
       </main>

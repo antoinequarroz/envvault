@@ -4,6 +4,8 @@ EnvVault is a local-first desktop application and CLI for making encrypted, vers
 
 > Status: security-conscious prerelease. The local backup, history, verification, recovery, restore and explicit SFTP push/pull paths are implemented in the CLI and desktop app. Evaluate it with fictitious values and read [`SECURITY.md`](SECURITY.md) before relying on it.
 
+The desktop interface is available in French and English. French is the default, and the selected language is stored locally on the device.
+
 ## Why
 
 Environment files often contain development credentials but are intentionally excluded from Git. Copying them by hand is fragile; putting them in ordinary cloud storage exposes plaintext. EnvVault keeps the format simple and auditable while leaving secret values invisible in the UI, logs and normal command output.
@@ -136,6 +138,7 @@ cargo test --workspace
 ./scripts/test-sftp-local.sh
 cd apps/envvault-desktop
 npm run lint
+npm test
 npm run build
 npm audit
 ```
