@@ -10,6 +10,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [dependencies]
 directories.workspace = true
 envvault-core = { path = "../../../crates/envvault-core" }
+secrecy.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tauri = { version = "2", features = [] }

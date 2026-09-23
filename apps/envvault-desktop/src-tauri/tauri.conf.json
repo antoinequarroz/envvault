@@ -13,5 +13,11 @@
     "windows": [{ "title": "EnvVault", "width": 1120, "height": 760, "minWidth": 840, "minHeight": 600 }],
     "security": { "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost" }
   },
-  "bundle": { "active": false }
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "DeveloperTool",
+    "shortDescription": "Encrypted local backups for selected .env files",
+    "longDescription": "EnvVault creates local-first, age-encrypted, versioned backups of explicitly selected .env files."
+  }
 }

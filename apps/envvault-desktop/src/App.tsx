@@ -59,6 +59,15 @@ export default function App() {
   const [restorePlan, setRestorePlan] = useState<RestorePlan | null>(null);
   const [overwrite, setOverwrite] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+  const [recoveryPath, setRecoveryPath] = useState("");
+  const [recoveryPassphrase, setRecoveryPassphrase] = useState("");
+  const [recoveryConfirmation, setRecoveryConfirmation] = useState("");
+  const [remoteHost, setRemoteHost] = useState("");
+  const [remotePort, setRemotePort] = useState("22");
+  const [remoteUsername, setRemoteUsername] = useState("");
+  const [remotePath, setRemotePath] = useState("");
+  const [remotePrivateKey, setRemotePrivateKey] = useState("");
+  const [remoteHostKey, setRemoteHostKey] = useState("");
 
   const refresh = useCallback(async () => {
     try {
@@ -139,6 +148,49 @@ export default function App() {
     }
   }
 
+  async function recoveryAction(mode: "export" | "import") {
+    setBusy(true);
+    setNotice("");
+    try {
+      if (mode === "export") {
+        await invoke("export_recovery", {
+          path: recoveryPath,
+          passphrase: recoveryPassphrase,
+          passphraseConfirmation: recoveryConfirmation,
+        });
+        setNotice("Encrypted recovery file created. Store it separately from the vault.");
+      } else {
+        await invoke("import_recovery", {
+          path: recoveryPath,
+          passphrase: recoveryPassphrase,
+        });
+        setNotice("Recovery identity imported into the system keyring.");
+      }
+      await refresh();
+    } catch (error) {
+      setNotice(String(error));
+    } finally {
+      setRecoveryPassphrase("");
+      setRecoveryConfirmation("");
+      setBusy(false);
+    }
+  }
+
+  async function configureRemote() {
+    await action(
+      () =>
+        invoke("configure_remote", {
+          host: remoteHost,
+          port: Number(remotePort),
+          username: remoteUsername,
+          remotePath,
+          privateKey: remotePrivateKey,
+          hostKeySha256: remoteHostKey,
+        }),
+      "Remote storage configured with strict host-key verification.",
+    );
+  }
+
   if (busy && !data.initialized)
     return (
       <main className="center">
@@ -160,13 +212,13 @@ export default function App() {
           onClick={() =>
             void action(
               () => invoke("init_vault"),
-              "Vault created. Export a recovery key from the CLI settings.",
+              "Vault created. Export an encrypted recovery file from Settings.",
             )
           }
         >
           Create local vault
         </button>
-        {notice && <div className="notice">{notice}</div>}
+        {notice && <div className="notice" aria-live="polite">{notice}</div>}
       </main>
     );
 
@@ -216,7 +268,7 @@ export default function App() {
             Refresh
           </button>
         </header>
-        {notice && <div className="notice">{notice}</div>}
+        {notice && <div className="notice" aria-live="polite">{notice}</div>}
         {tab === "home" && (
           <>
             <section className="hero">
@@ -481,26 +533,186 @@ export default function App() {
           </section>
         )}
         {tab === "settings" && (
-          <section className="panel">
+          <section className="panel settings-panel">
             <h2>Security & recovery</h2>
             <div className="setting">
               <strong>Private identity</strong>
               <span>Stored in the operating-system keyring</span>
             </div>
-            <div className="setting">
-              <strong>Recovery</strong>
-              <span>
-                Use <code>envvault recovery export</code> to create a
-                passphrase-protected recovery file.
-              </span>
+            <div className="settings-section">
+              <div>
+                <h3>Recovery file</h3>
+                <p className="muted">
+                  The passphrase is sent only to the local Rust process and is
+                  cleared from this form after every attempt.
+                </p>
+              </div>
+              <div className="settings-form">
+                <label>
+                  Recovery file path
+                  <input
+                    value={recoveryPath}
+                    onChange={(event) => setRecoveryPath(event.target.value)}
+                    placeholder="/separate/media/envvault-recovery.age"
+                    spellCheck={false}
+                  />
+                </label>
+                <div className="settings-grid">
+                  <label>
+                    Passphrase
+                    <input
+                      type="password"
+                      value={recoveryPassphrase}
+                      onChange={(event) =>
+                        setRecoveryPassphrase(event.target.value)
+                      }
+                      autoComplete="new-password"
+                    />
+                  </label>
+                  <label>
+                    Confirm for export
+                    <input
+                      type="password"
+                      value={recoveryConfirmation}
+                      onChange={(event) =>
+                        setRecoveryConfirmation(event.target.value)
+                      }
+                      autoComplete="new-password"
+                    />
+                  </label>
+                </div>
+                <div className="button-row">
+                  <button
+                    disabled={!recoveryPath || !recoveryPassphrase || busy}
+                    onClick={() => void recoveryAction("import")}
+                    className="secondary"
+                  >
+                    Import identity
+                  </button>
+                  <button
+                    disabled={
+                      !recoveryPath ||
+                      !recoveryPassphrase ||
+                      !recoveryConfirmation ||
+                      busy
+                    }
+                    onClick={() => void recoveryAction("export")}
+                  >
+                    Export encrypted recovery
+                  </button>
+                </div>
+              </div>
             </div>
-            <div className="setting">
-              <strong>VPS storage</strong>
-              <span>
-                {data.remote_configured
-                  ? "Configured with strict host-key verification."
-                  : "Not configured. The local vault is fully functional."}
-              </span>
+            <div className="settings-section">
+              <div>
+                <h3>SFTP storage</h3>
+                <p className="muted">
+                  Only encrypted objects are transferred. Unknown or changed
+                  host keys are rejected.
+                </p>
+              </div>
+              <div className="settings-form">
+                <div className="settings-grid remote-grid">
+                  <label>
+                    Host
+                    <input
+                      value={remoteHost}
+                      onChange={(event) => setRemoteHost(event.target.value)}
+                      placeholder="backup.example.test"
+                      spellCheck={false}
+                    />
+                  </label>
+                  <label>
+                    Port
+                    <input
+                      type="number"
+                      min="1"
+                      max="65535"
+                      value={remotePort}
+                      onChange={(event) => setRemotePort(event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Username
+                    <input
+                      value={remoteUsername}
+                      onChange={(event) =>
+                        setRemoteUsername(event.target.value)
+                      }
+                      spellCheck={false}
+                    />
+                  </label>
+                  <label>
+                    Remote folder
+                    <input
+                      value={remotePath}
+                      onChange={(event) => setRemotePath(event.target.value)}
+                      placeholder="/srv/envvault"
+                      spellCheck={false}
+                    />
+                  </label>
+                </div>
+                <label>
+                  Dedicated SSH private-key path
+                  <input
+                    value={remotePrivateKey}
+                    onChange={(event) =>
+                      setRemotePrivateKey(event.target.value)
+                    }
+                    placeholder="/path/to/dedicated_ed25519"
+                    spellCheck={false}
+                  />
+                </label>
+                <label>
+                  Trusted host-key fingerprint
+                  <input
+                    value={remoteHostKey}
+                    onChange={(event) => setRemoteHostKey(event.target.value)}
+                    placeholder="SHA256:verified-out-of-band"
+                    spellCheck={false}
+                  />
+                </label>
+                <div className="button-row">
+                  <button
+                    className="secondary"
+                    disabled={!data.remote_configured || busy}
+                    onClick={() =>
+                      void action(
+                        () => invoke("sync_remote", { direction: "pull" }),
+                        "Encrypted pull completed.",
+                      )
+                    }
+                  >
+                    Pull encrypted objects
+                  </button>
+                  <button
+                    className="secondary"
+                    disabled={!data.remote_configured || busy}
+                    onClick={() =>
+                      void action(
+                        () => invoke("sync_remote", { direction: "push" }),
+                        "Encrypted push completed.",
+                      )
+                    }
+                  >
+                    Push encrypted objects
+                  </button>
+                  <button
+                    disabled={
+                      !remoteHost ||
+                      !remotePort ||
+                      !remoteUsername ||
+                      !remotePath ||
+                      !remotePrivateKey ||
+                      !remoteHostKey ||
+                      busy
+                    }
+                    onClick={() => void configureRemote()}
+                  >
+                    Save SFTP configuration
+                  </button>
+                </div>
+              </div>
             </div>
             <div className="warning">
               EnvVault protects a stolen vault or VPS copy. It cannot protect

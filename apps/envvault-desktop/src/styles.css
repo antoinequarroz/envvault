@@ -27,6 +27,10 @@ button {
   color: white;
   font-weight: 650;
   cursor: pointer;
+  min-height: 44px;
+  transition-property: background-color, color, border-color, opacity, scale;
+  transition-duration: 120ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
 }
 button:hover {
   background: #105a3d;
@@ -34,6 +38,14 @@ button:hover {
 button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+button:active:not(:disabled) {
+  scale: 0.96;
+}
+button:focus-visible,
+input:focus-visible {
+  outline: 3px solid rgb(23 111 75 / 28%);
+  outline-offset: 2px;
 }
 .shell {
   display: grid;
@@ -254,11 +266,14 @@ h1 {
   font-weight: 700;
 }
 .form input[type="text"],
-.form input:not([type]) {
+.form input:not([type]),
+.settings-form input {
   padding: 12px;
   border: 1px solid #cbd5cf;
   border-radius: 9px;
   background: #fbfcfb;
+  min-height: 44px;
+  color: #17201c;
 }
 .files {
   border: 1px solid #dce4df;
@@ -288,6 +303,50 @@ h1 {
 }
 .setting span {
   color: #617069;
+}
+.settings-panel {
+  max-width: 960px;
+}
+.settings-section {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 28px;
+  padding: 26px 0;
+  border-top: 1px solid #edf0ee;
+}
+.settings-section h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+.settings-section p {
+  margin-bottom: 0;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.settings-form {
+  display: grid;
+  gap: 14px;
+}
+.settings-form label {
+  display: grid;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.remote-grid {
+  grid-template-columns: minmax(0, 2fr) minmax(90px, 1fr);
+}
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 2px;
 }
 .warning,
 .notice {
@@ -354,5 +413,10 @@ h1 {
   .setting {
     grid-template-columns: 1fr;
     gap: 8px;
+  }
+  .settings-section,
+  .settings-grid,
+  .remote-grid {
+    grid-template-columns: 1fr;
   }
 }

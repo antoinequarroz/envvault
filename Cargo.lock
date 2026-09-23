@@ -1104,6 +1104,7 @@ version = "0.1.0"
 dependencies = [
  "directories",
  "envvault-core",
+ "secrecy",
  "serde",
  "serde_json",
  "tauri",

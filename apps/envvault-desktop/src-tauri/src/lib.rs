@@ -4,9 +4,10 @@ use std::sync::Arc;
 
 use directories::ProjectDirs;
 use envvault_core::{
-    BackupSummary, KeyringSecretStore, LocalState, Project, RestorePlan, ScanOptions, ScannedFile,
-    Vault, VerifyReport, scan,
+    BackupSummary, KeyringSecretStore, LocalState, Project, RemoteConfig, RestorePlan, ScanOptions,
+    ScannedFile, SftpRemote, Vault, VerifyReport, scan,
 };
+use secrecy::SecretString;
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -183,6 +184,87 @@ fn execute_restore(
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn export_recovery(
+    path: String,
+    passphrase: String,
+    passphrase_confirmation: String,
+) -> Result<(), String> {
+    if passphrase.len() < 12 || passphrase != passphrase_confirmation {
+        return Err("passphrases must match and contain at least 12 characters".into());
+    }
+    let state = load_state()?;
+    vault(&state)
+        .export_recovery(
+            PathBuf::from(path).as_path(),
+            SecretString::from(passphrase),
+        )
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn import_recovery(path: String, passphrase: String) -> Result<(), String> {
+    if passphrase.is_empty() {
+        return Err("a recovery passphrase is required".into());
+    }
+    let state = load_state()?;
+    vault(&state)
+        .import_recovery(
+            PathBuf::from(path).as_path(),
+            SecretString::from(passphrase),
+        )
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn configure_remote(
+    host: String,
+    port: u16,
+    username: String,
+    remote_path: String,
+    private_key: String,
+    host_key_sha256: String,
+) -> Result<(), String> {
+    let private_key = PathBuf::from(private_key);
+    if host.trim().is_empty()
+        || username.trim().is_empty()
+        || remote_path.trim().is_empty()
+        || port == 0
+        || !private_key.is_file()
+        || !host_key_sha256.starts_with("SHA256:")
+    {
+        return Err(
+            "host, user, remote path, existing private key, and exact SHA256 host fingerprint are required"
+                .into(),
+        );
+    }
+    let mut state = load_state()?;
+    state.remote = Some(RemoteConfig {
+        host,
+        port,
+        username,
+        remote_path,
+        private_key,
+        host_key_sha256,
+    });
+    save_state(&state)
+}
+
+#[tauri::command]
+fn sync_remote(direction: String) -> Result<usize, String> {
+    let state = load_state()?;
+    let remote = state
+        .remote
+        .clone()
+        .ok_or_else(|| "remote storage is not configured".to_owned())?;
+    let backend = SftpRemote::new(remote);
+    match direction.as_str() {
+        "push" => backend.push(&state.vault_path).map_err(|e| e.to_string()),
+        "pull" => backend.pull(&state.vault_path).map_err(|e| e.to_string()),
+        _ => Err("sync direction must be push or pull".into()),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -195,7 +277,11 @@ pub fn run() {
             project_history,
             verify_vault,
             plan_restore,
-            execute_restore
+            execute_restore,
+            export_recovery,
+            import_recovery,
+            configure_remote,
+            sync_remote
         ])
         .run(tauri::generate_context!())
         .expect("failed to run EnvVault desktop");

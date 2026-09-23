@@ -1,0 +1,95 @@
+name: Unsigned prerelease
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libdbus-1-dev pkg-config openssh-server netcat-openbsd ruby
+          sudo mkdir -p /run/sshd
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/envvault-desktop/package-lock.json
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - run: cargo test --workspace
+      - run: ./scripts/test-sftp-local.sh
+      - run: npm ci
+        working-directory: apps/envvault-desktop
+      - run: npm run lint
+        working-directory: apps/envvault-desktop
+      - run: npm run build
+        working-directory: apps/envvault-desktop
+      - run: npm audit --audit-level=high
+        working-directory: apps/envvault-desktop
+
+  bundle:
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
+            args: --target universal-apple-darwin --bundles app,dmg
+          - platform: ubuntu-22.04
+            rust-targets: x86_64-unknown-linux-gnu
+            args: --bundles deb,appimage
+          - platform: windows-latest
+            rust-targets: x86_64-pc-windows-msvc
+            args: --bundles nsis,msi
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libdbus-1-dev pkg-config
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/envvault-desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
+      - uses: Swatinem/rust-cache@v2
+      - run: npm ci
+        working-directory: apps/envvault-desktop
+      - name: Build and upload unsigned bundles
+        uses: tauri-apps/tauri-action@action-v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/envvault-desktop
+          tauriScript: npm run tauri
+          tagName: ${{ github.ref_name }}
+          releaseName: EnvVault ${{ github.ref_name }} — unsigned prerelease
+          releaseBody: |
+            This is a testable, security-conscious prerelease. The desktop bundles are **unsigned and not notarized**. Windows and macOS may warn or refuse to open them. Do not bypass operating-system security controls; if a bundle is blocked, build EnvVault from the tagged source instead.
+
+            Use only fictitious `.env` files while evaluating this prerelease. Review `SECURITY.md` and `docs/TESTING.md` before use. No real credentials, signing certificates, or production VPS access were used to create or test these artifacts.
+          releaseDraft: false
+          prerelease: true
+          uploadUpdaterJson: false
+          args: ${{ matrix.args }}
